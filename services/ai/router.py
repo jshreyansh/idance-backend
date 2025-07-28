@@ -1,3 +1,8 @@
+#!/usr/bin/env python3
+"""
+AI Service Router for pose analysis and scoring endpoints
+"""
+
 from fastapi import APIRouter, HTTPException, Depends
 from services.ai.models import AnalysisRequest, AnalysisResponse
 from services.ai.pose_analysis import pose_analysis_service
@@ -8,10 +13,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 ai_router = APIRouter()
-
-@ai_router.get('/ai/health')
-def ai_health():
-    return {"status": "ai service ok"}
 
 @ai_router.post('/api/ai/analyze-pose', response_model=AnalysisResponse)
 async def analyze_pose(
@@ -57,12 +58,9 @@ async def get_analysis_status(
 
 @ai_router.post('/api/ai/score-submission', response_model=Dict)
 async def score_submission(
-    request: dict,
+    submission_id: str,
     user_id: str = Depends(get_current_user_id)
 ):
-    submission_id = request.get("submission_id")
-    if not submission_id:
-        raise HTTPException(status_code=400, detail="submission_id is required")
     """
     Manually trigger scoring for a submission
     """
@@ -89,4 +87,16 @@ async def score_submission(
         
     except Exception as e:
         logger.error(f"❌ Error in manual scoring: {e}")
-        raise HTTPException(status_code=500, detail=f"Scoring failed: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Scoring failed: {str(e)}")
+
+@ai_router.get('/api/ai/health')
+async def ai_health():
+    """
+    Health check for AI service
+    """
+    return {
+        "status": "healthy",
+        "service": "ai_pose_analysis",
+        "active_analyses": len(pose_analysis_service.analysis_queue),
+        "version": "1.0.0"
+    } 
