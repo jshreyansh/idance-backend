@@ -10,6 +10,8 @@ from datetime import datetime
 from bson import ObjectId
 from infra.mongo import Database
 from services.user.service import get_current_user_id
+from services.ai.pose_analysis import pose_analysis_service
+from services.ai.models import AnalysisRequest
 import logging
 
 logger = logging.getLogger(__name__)
@@ -40,7 +42,7 @@ class SubmissionResponse(BaseModel):
     userProfile: Dict
 
 class SubmissionListResponse(BaseModel):
-    """Response model for listing submissions"""
+    """Response model for list of submissions"""
     submissions: List[SubmissionResponse]
     total: int
     page: int
@@ -144,6 +146,14 @@ class SubmissionService:
                 }
             )
             
+            # 🚀 NEW: Trigger AI analysis automatically
+            try:
+                await self._trigger_ai_analysis(submission_id, session, challenge)
+                logger.info(f"✅ AI analysis triggered for submission {submission_id}")
+            except Exception as e:
+                logger.error(f"⚠️ AI analysis failed for submission {submission_id}: {e}")
+                # Don't fail the submission if AI analysis fails
+            
             logger.info(f"✅ User {user_id} submitted session {submission_data.sessionId} to challenge {challenge_id}")
             
             return {
@@ -157,6 +167,64 @@ class SubmissionService:
         except Exception as e:
             logger.error(f"❌ Error creating submission: {e}")
             raise HTTPException(status_code=500, detail="Failed to create submission")
+    
+    async def _trigger_ai_analysis(self, submission_id: str, session: dict, challenge: dict) -> None:
+        """Trigger AI analysis for a submission"""
+        try:
+            # Get video URL from session
+            video_url = session.get("videoUrl")
+            if not video_url:
+                logger.warning(f"No video URL found for session {session.get('_id')}")
+                return
+            
+            # Create analysis request
+            analysis_request = AnalysisRequest(
+                submission_id=submission_id,
+                video_url=video_url,
+                challenge_type=challenge.get("type", "freestyle"),
+                target_bpm=None  # Could be extracted from challenge metadata
+            )
+            
+            # Trigger pose analysis (this will run asynchronously)
+            analysis_result = await pose_analysis_service.analyze_pose(analysis_request)
+            
+            # Update submission with analysis results
+            await self._update_submission_with_analysis(submission_id, analysis_result)
+            
+        except Exception as e:
+            logger.error(f"❌ Error in AI analysis trigger: {e}")
+            raise
+    
+    async def _update_submission_with_analysis(self, submission_id: str, analysis_result: dict) -> None:
+        """Update submission with AI analysis results"""
+        try:
+            db = self._get_db()
+            
+            update_data = {
+                "analysisComplete": True,
+                "processedAt": datetime.utcnow()
+            }
+            
+            # Update with score breakdown if available
+            if analysis_result.get("score_breakdown"):
+                update_data["scoreBreakdown"] = analysis_result["score_breakdown"]
+                update_data["totalScore"] = analysis_result.get("total_score")
+            
+            # Update with pose data URL if available
+            if analysis_result.get("pose_data_url"):
+                update_data["poseDataURL"] = analysis_result["pose_data_url"]
+            
+            # Update submission
+            result = await db['challenge_submissions'].update_one(
+                {"_id": ObjectId(submission_id)},
+                {"$set": update_data}
+            )
+            
+            logger.info(f"✅ Updated submission {submission_id} with analysis results: {result.modified_count} documents modified")
+            
+        except Exception as e:
+            logger.error(f"❌ Error updating submission with analysis: {e}")
+            raise
     
     async def get_submission_by_id(self, submission_id: str, user_id: str) -> Optional[SubmissionResponse]:
         """Get a specific submission by ID"""
@@ -279,14 +347,15 @@ async def get_submission(
     submission_id: str,
     user_id: str = Depends(get_current_user_id)
 ):
-    """Get a specific submission by ID"""
+    """Get a specific submission"""
     return await submission_service.get_submission_by_id(submission_id, user_id)
 
-@submission_router.get('/api/users/me/submissions', response_model=SubmissionListResponse)
-async def get_my_submissions(
+@submission_router.get('/api/users/{user_id}/submissions', response_model=SubmissionListResponse)
+async def get_user_submissions(
+    user_id: str,
     page: int = 1,
     limit: int = 20,
-    user_id: str = Depends(get_current_user_id)
+    current_user_id: str = Depends(get_current_user_id)
 ):
-    """Get current user's submissions"""
+    """Get all submissions by a user"""
     return await submission_service.get_user_submissions(user_id, page, limit) 

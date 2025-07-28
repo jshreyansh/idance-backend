@@ -56,6 +56,13 @@ class PoseAnalysisService:
             response.feedback = await self._generate_mock_feedback(mock_scores)
             response.completed_at = datetime.utcnow()
             
+            # 🚀 NEW: Update submission in database with analysis results
+            try:
+                await self._update_submission_in_database(request.submission_id, response)
+                logger.info(f"✅ Updated submission {request.submission_id} in database")
+            except Exception as e:
+                logger.error(f"❌ Failed to update submission in database: {e}")
+            
             logger.info(f"✅ Pose analysis completed for submission {request.submission_id}")
             return response
             
@@ -175,6 +182,41 @@ class PoseAnalysisService:
             feedback_parts.append("Experiment with more creative movements.")
         
         return " ".join(feedback_parts)
+    
+    async def _update_submission_in_database(self, submission_id: str, analysis_response: 'AnalysisResponse') -> None:
+        """Update submission in database with analysis results"""
+        try:
+            from infra.mongo import Database
+            from bson import ObjectId
+            from datetime import datetime
+            
+            db = Database.get_database()
+            
+            update_data = {
+                "analysisComplete": True,
+                "processedAt": datetime.utcnow()
+            }
+            
+            # Update with score breakdown if available
+            if analysis_response.score_breakdown:
+                update_data["scoreBreakdown"] = analysis_response.score_breakdown.dict()
+                update_data["totalScore"] = analysis_response.total_score
+            
+            # Update with pose data URL if available
+            if analysis_response.pose_data_url:
+                update_data["poseDataURL"] = analysis_response.pose_data_url
+            
+            # Update submission
+            result = await db['challenge_submissions'].update_one(
+                {"_id": ObjectId(submission_id)},
+                {"$set": update_data}
+            )
+            
+            logger.info(f"✅ Database update result: {result.modified_count} documents modified for submission {submission_id}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error updating submission in database: {e}")
+            raise
 
 # Global service instance
 pose_analysis_service = PoseAnalysisService() 
