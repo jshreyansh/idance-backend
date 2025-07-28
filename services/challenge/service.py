@@ -198,6 +198,162 @@ class ChallengeService:
             region = os.getenv('AWS_REGION', 'us-east-1')
             bucket_name = os.getenv('S3_BUCKET_NAME')
             return f"https://{bucket_name}.s3.{region}.amazonaws.com/{file_key}"
+    
+    async def update_challenge(self, challenge_id: str, challenge_data: ChallengeCreate, user_id: str) -> bool:
+        """Update an existing challenge"""
+        try:
+            db = self._get_db()
+            
+            # Validate challenge exists
+            existing_challenge = await db['challenges'].find_one({
+                "_id": ObjectId(challenge_id)
+            })
+            
+            if not existing_challenge:
+                raise HTTPException(status_code=404, detail="Challenge not found")
+            
+            # Prepare update data
+            now = datetime.utcnow()
+            update_data = {
+                "title": challenge_data.title,
+                "description": challenge_data.description,
+                "type": challenge_data.type,
+                "difficulty": challenge_data.difficulty,
+                "startTime": challenge_data.startTime,
+                "endTime": challenge_data.endTime,
+                "demoVideoFileKey": challenge_data.demoVideoFileKey,
+                "points": challenge_data.points,
+                "badgeName": challenge_data.badgeName,
+                "badgeIconURL": challenge_data.badgeIconURL,
+                "thumbnailURL": challenge_data.thumbnailURL,
+                "scoringCriteria": challenge_data.scoringCriteria.dict() if challenge_data.scoringCriteria else None,
+                "updatedAt": now,
+                "updatedBy": user_id
+            }
+            
+            # Remove None values
+            update_data = {k: v for k, v in update_data.items() if v is not None}
+            
+            # Update challenge
+            result = await db['challenges'].update_one(
+                {"_id": ObjectId(challenge_id)},
+                {"$set": update_data}
+            )
+            
+            return result.modified_count > 0
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error updating challenge: {e}")
+            raise HTTPException(status_code=500, detail="Failed to update challenge")
+    
+    async def delete_challenge(self, challenge_id: str, user_id: str) -> bool:
+        """Delete a challenge (soft delete by setting isActive to False)"""
+        try:
+            db = self._get_db()
+            
+            # Validate challenge exists
+            existing_challenge = await db['challenges'].find_one({
+                "_id": ObjectId(challenge_id)
+            })
+            
+            if not existing_challenge:
+                raise HTTPException(status_code=404, detail="Challenge not found")
+            
+            # Soft delete by setting isActive to False
+            result = await db['challenges'].update_one(
+                {"_id": ObjectId(challenge_id)},
+                {
+                    "$set": {
+                        "isActive": False,
+                        "deletedAt": datetime.utcnow(),
+                        "deletedBy": user_id,
+                        "updatedAt": datetime.utcnow()
+                    }
+                }
+            )
+            
+            return result.modified_count > 0
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error deleting challenge: {e}")
+            raise HTTPException(status_code=500, detail="Failed to delete challenge")
+    
+    async def get_challenge_stats(self, challenge_id: str) -> dict:
+        """Get comprehensive statistics for a challenge"""
+        try:
+            db = self._get_db()
+            
+            # Get challenge details
+            challenge = await db['challenges'].find_one({
+                "_id": ObjectId(challenge_id)
+            })
+            
+            if not challenge:
+                raise HTTPException(status_code=404, detail="Challenge not found")
+            
+            # Get submission statistics
+            submission_stats = await db['challenge_submissions'].aggregate([
+                {"$match": {"challengeId": challenge_id}},
+                {"$group": {
+                    "_id": None,
+                    "totalSubmissions": {"$sum": 1},
+                    "averageScore": {"$avg": "$totalScore"},
+                    "topScore": {"$max": "$totalScore"},
+                    "lowestScore": {"$min": "$totalScore"},
+                    "completedAnalysis": {"$sum": {"$cond": ["$analysisComplete", 1, 0]}},
+                    "pendingAnalysis": {"$sum": {"$cond": ["$analysisComplete", 0, 1]}}
+                }}
+            ]).to_list(length=1)
+            
+            stats = submission_stats[0] if submission_stats else {
+                "totalSubmissions": 0,
+                "averageScore": 0,
+                "topScore": 0,
+                "lowestScore": 0,
+                "completedAnalysis": 0,
+                "pendingAnalysis": 0
+            }
+            
+            # Get user participation stats
+            unique_participants = await db['challenge_submissions'].distinct(
+                "userId", 
+                {"challengeId": challenge_id}
+            )
+            
+            # Get recent submissions (last 7 days)
+            week_ago = datetime.utcnow() - timedelta(days=7)
+            recent_submissions = await db['challenge_submissions'].count_documents({
+                "challengeId": challenge_id,
+                "submittedAt": {"$gte": week_ago}
+            })
+            
+            return {
+                "challengeId": challenge_id,
+                "challengeTitle": challenge.get("title", ""),
+                "totalSubmissions": stats["totalSubmissions"],
+                "uniqueParticipants": len(unique_participants),
+                "averageScore": round(stats["averageScore"] or 0, 2),
+                "topScore": stats["topScore"] or 0,
+                "lowestScore": stats["lowestScore"] or 0,
+                "completedAnalysis": stats["completedAnalysis"],
+                "pendingAnalysis": stats["pendingAnalysis"],
+                "recentSubmissions": recent_submissions,
+                "challengeStatus": "active" if challenge.get("isActive") else "inactive",
+                "startTime": challenge.get("startTime"),
+                "endTime": challenge.get("endTime"),
+                "createdAt": challenge.get("createdAt"),
+                "lastUpdated": challenge.get("updatedAt")
+            }
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"❌ Error getting challenge stats: {e}")
+            raise HTTPException(status_code=500, detail="Failed to get challenge statistics")
 
 # Global service instance
 challenge_service = ChallengeService()
@@ -225,6 +381,36 @@ async def get_today_challenge(user_id: str = Depends(get_current_user_id)):
 async def get_upcoming_challenges(user_id: str = Depends(get_current_user_id), days: int = 7):
     """Get upcoming challenges for the next N days"""
     return await challenge_service.get_upcoming_challenges(days)
+
+@challenge_router.put('/api/challenges/{challenge_id}', response_model=dict)
+async def update_challenge(
+    challenge_id: str,
+    challenge_data: ChallengeCreate,
+    user_id: str = Depends(get_current_user_id)
+):
+    """Update a challenge (admin only)"""
+    # TODO: Add admin role check
+    result = await challenge_service.update_challenge(challenge_id, challenge_data, user_id)
+    return {"message": "Challenge updated successfully", "challengeId": challenge_id}
+
+@challenge_router.delete('/api/challenges/{challenge_id}', response_model=dict)
+async def delete_challenge(
+    challenge_id: str,
+    user_id: str = Depends(get_current_user_id)
+):
+    """Delete a challenge (admin only)"""
+    # TODO: Add admin role check
+    result = await challenge_service.delete_challenge(challenge_id, user_id)
+    return {"message": "Challenge deleted successfully", "challengeId": challenge_id}
+
+@challenge_router.get('/api/challenges/{challenge_id}/stats', response_model=dict)
+async def get_challenge_stats(
+    challenge_id: str,
+    user_id: str = Depends(get_current_user_id)
+):
+    """Get challenge statistics"""
+    stats = await challenge_service.get_challenge_stats(challenge_id)
+    return stats
 
 @challenge_router.get('/api/challenges/{challenge_id}', response_model=Optional[ChallengeResponse])
 async def get_challenge(challenge_id: str, user_id: str = Depends(get_current_user_id)):
