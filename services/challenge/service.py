@@ -105,37 +105,57 @@ class ChallengeService:
             if not challenge:
                 return None
             
+            # Convert _id from ObjectId to string
+            challenge['_id'] = str(challenge['_id'])
+            
+            # Convert scoringCriteria dict back to ChallengeCriteria object
+            if 'scoringCriteria' in challenge and isinstance(challenge['scoringCriteria'], dict):
+                challenge['scoringCriteria'] = ChallengeCriteria(**challenge['scoringCriteria'])
             return ChallengeResponse(**challenge)
         except Exception as e:
             raise HTTPException(status_code=400, detail="Invalid challenge ID")
     
     async def list_challenges(self, page: int = 1, limit: int = 20, active_only: bool = True) -> ChallengeListResponse:
         """List challenges with pagination"""
-        skip = (page - 1) * limit
-        
-        # Build query
-        query = {}
-        if active_only:
-            query["isActive"] = True
-        
-        # Get total count
-        total = await self._get_db()['challenges'].count_documents(query)
-        
-        # Get challenges
-        challenges_cursor = self._get_db()['challenges'].find(query).sort("createdAt", -1).skip(skip).limit(limit)
-        challenges = await challenges_cursor.to_list(length=limit)
-        
-        # Convert to response models
-        challenge_responses = []
-        for challenge in challenges:
-            challenge_responses.append(ChallengeResponse(**challenge))
-        
-        return ChallengeListResponse(
-            challenges=challenge_responses,
-            total=total,
-            page=page,
-            limit=limit
-        )
+        try:
+            skip = (page - 1) * limit
+            
+            # Build query
+            query = {}
+            if active_only:
+                query["isActive"] = True
+            
+            # Get total count
+            total = await self._get_db()['challenges'].count_documents(query)
+            
+            # Get challenges
+            challenges_cursor = self._get_db()['challenges'].find(query).sort("createdAt", -1).skip(skip).limit(limit)
+            challenges = await challenges_cursor.to_list(length=limit)
+            
+            # Convert to response models
+            challenge_responses = []
+            for challenge in challenges:
+                try:
+                    # Convert _id from ObjectId to string
+                    challenge['_id'] = str(challenge['_id'])
+                    
+                    # Convert scoringCriteria dict back to ChallengeCriteria object
+                    if 'scoringCriteria' in challenge and isinstance(challenge['scoringCriteria'], dict):
+                        challenge['scoringCriteria'] = ChallengeCriteria(**challenge['scoringCriteria'])
+                    challenge_responses.append(ChallengeResponse(**challenge))
+                except Exception as e:
+                    print(f"Error processing challenge {challenge.get('_id')}: {e}")
+                    continue
+            
+            return ChallengeListResponse(
+                challenges=challenge_responses,
+                total=total,
+                page=page,
+                limit=limit
+            )
+        except Exception as e:
+            print(f"Error in list_challenges: {e}")
+            raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     
     async def get_upcoming_challenges(self, days: int = 7) -> List[ChallengeResponse]:
         """Get upcoming challenges for the next N days"""
@@ -148,7 +168,16 @@ class ChallengeService:
         }).sort("startTime", 1)
         
         challenges = await challenges_cursor.to_list(length=None)
-        return [ChallengeResponse(**challenge) for challenge in challenges]
+        challenge_responses = []
+        for challenge in challenges:
+            # Convert _id from ObjectId to string
+            challenge['_id'] = str(challenge['_id'])
+            
+            # Convert scoringCriteria dict back to ChallengeCriteria object
+            if 'scoringCriteria' in challenge and isinstance(challenge['scoringCriteria'], dict):
+                challenge['scoringCriteria'] = ChallengeCriteria(**challenge['scoringCriteria'])
+            challenge_responses.append(ChallengeResponse(**challenge))
+        return challenge_responses
     
     async def deactivate_expired_challenges(self) -> int:
         """Deactivate challenges that have ended"""
@@ -188,12 +217,17 @@ async def create_challenge(
     return {"message": "Challenge created successfully", "challengeId": challenge_id}
 
 @challenge_router.get('/api/challenges/today', response_model=Optional[TodayChallengeResponse])
-async def get_today_challenge():
+async def get_today_challenge(user_id: str = Depends(get_current_user_id)):
     """Get today's active challenge"""
     return await challenge_service.get_active_challenge()
 
+@challenge_router.get('/api/challenges/upcoming', response_model=List[ChallengeResponse])
+async def get_upcoming_challenges(user_id: str = Depends(get_current_user_id), days: int = 7):
+    """Get upcoming challenges for the next N days"""
+    return await challenge_service.get_upcoming_challenges(days)
+
 @challenge_router.get('/api/challenges/{challenge_id}', response_model=Optional[ChallengeResponse])
-async def get_challenge(challenge_id: str):
+async def get_challenge(challenge_id: str, user_id: str = Depends(get_current_user_id)):
     """Get a specific challenge by ID"""
     return await challenge_service.get_challenge_by_id(challenge_id)
 
@@ -201,12 +235,8 @@ async def get_challenge(challenge_id: str):
 async def list_challenges(
     page: int = 1,
     limit: int = 20,
-    active_only: bool = True
+    active_only: bool = True,
+    user_id: str = Depends(get_current_user_id)
 ):
     """List challenges with pagination"""
-    return await challenge_service.list_challenges(page, limit, active_only)
-
-@challenge_router.get('/api/challenges/upcoming', response_model=List[ChallengeResponse])
-async def get_upcoming_challenges(days: int = 7):
-    """Get upcoming challenges for the next N days"""
-    return await challenge_service.get_upcoming_challenges(days) 
+    return await challenge_service.list_challenges(page, limit, active_only) 
