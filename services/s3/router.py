@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
-from services.s3.service import s3_service, generate_session_video_key, generate_thumbnail_key
-from services.s3.models import VideoUploadRequest, VideoUploadResponse, ThumbnailUploadRequest, ThumbnailUploadResponse
+from services.s3.service import s3_service, generate_session_video_key, generate_thumbnail_key, generate_challenge_video_key
+from services.s3.models import VideoUploadRequest, VideoUploadResponse, ThumbnailUploadRequest, ThumbnailUploadResponse, ChallengeVideoUploadRequest, ChallengeVideoUploadResponse
 from services.user.service import get_current_user_id
 from infra.mongo import Database
 from bson import ObjectId
@@ -42,6 +42,57 @@ async def get_video_upload_url(
     file_url = s3_service.get_file_url(file_key)
     
     return VideoUploadResponse(
+        upload_url=upload_data['upload_url'],
+        file_key=upload_data['file_key'],
+        content_type=upload_data['content_type'],
+        expires_in=upload_data['expires_in'],
+        file_url=file_url
+    )
+
+@s3_router.post('/api/s3/upload/challenge-video', response_model=ChallengeVideoUploadResponse)
+async def get_challenge_video_upload_url(
+    request: ChallengeVideoUploadRequest = Body(...),
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Get a presigned URL for uploading a challenge video to S3 (for streamlined flow)
+    """
+    # Verify the challenge exists and is active
+    db = Database.get_database()
+    challenge = await db['challenges'].find_one({
+        '_id': ObjectId(request.challenge_id),
+        'isActive': True
+    })
+    
+    if not challenge:
+        raise HTTPException(status_code=404, detail="Challenge not found or not active")
+    
+    # Check if user already submitted to this challenge
+    existing_submission = await db['challenge_submissions'].find_one({
+        'userId': user_id,
+        'challengeId': request.challenge_id
+    })
+    
+    if existing_submission:
+        raise HTTPException(status_code=400, detail="Already submitted to this challenge")
+    
+    # Generate unique file key for the challenge video
+    file_key = generate_challenge_video_key(
+        user_id=user_id,
+        challenge_id=request.challenge_id,
+        file_extension=request.file_extension
+    )
+    
+    # Generate presigned upload URL
+    upload_data = s3_service.generate_presigned_upload_url(
+        file_key=file_key,
+        content_type=request.content_type
+    )
+    
+    # Get the final file URL
+    file_url = s3_service.get_file_url(file_key)
+    
+    return ChallengeVideoUploadResponse(
         upload_url=upload_data['upload_url'],
         file_key=upload_data['file_key'],
         content_type=upload_data['content_type'],

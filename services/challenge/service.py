@@ -1,5 +1,9 @@
 from fastapi import APIRouter, HTTPException, Depends
-from services.challenge.models import Challenge, ChallengeCreate, ChallengeResponse, ChallengeListResponse, TodayChallengeResponse, ChallengeCriteria
+from services.challenge.models import (
+    Challenge, ChallengeCreate, ChallengeResponse, ChallengeListResponse, 
+    TodayChallengeResponse, ChallengeCriteria, ChallengeSearchRequest,
+    ChallengeLeaderboardResponse, ChallengeLeaderboardEntry
+)
 from services.user.service import get_current_user_id
 from infra.mongo import Database
 from datetime import datetime, timedelta
@@ -28,8 +32,20 @@ class ChallengeService:
         if not challenge_data.scoringCriteria:
             challenge_data.scoringCriteria = ChallengeCriteria()
         
-        # Generate demo video URL from file key
-        demo_video_url = self._generate_video_url(challenge_data.demoVideoFileKey)
+        # Handle demo video URL/file key
+        demo_video_url = None
+        demo_video_file_key = None
+        
+        if challenge_data.demoVideoURL:
+            # Use direct URL
+            demo_video_url = challenge_data.demoVideoURL
+            demo_video_file_key = f"challenges/demo/external_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.mp4"
+        elif challenge_data.demoVideoFileKey:
+            # Use S3 file key and generate URL
+            demo_video_file_key = challenge_data.demoVideoFileKey
+            demo_video_url = self._generate_video_url(challenge_data.demoVideoFileKey)
+        else:
+            raise HTTPException(status_code=400, detail="Either demoVideoURL or demoVideoFileKey must be provided")
         
         now = datetime.utcnow()
         challenge_doc = {
@@ -40,19 +56,22 @@ class ChallengeService:
             "startTime": challenge_data.startTime,
             "endTime": challenge_data.endTime,
             "demoVideoURL": demo_video_url,
-            "demoVideoFileKey": challenge_data.demoVideoFileKey,
+            "demoVideoFileKey": demo_video_file_key,
             "thumbnailURL": challenge_data.thumbnailURL,
             "points": challenge_data.points,
             "badgeName": challenge_data.badgeName,
             "badgeIconURL": challenge_data.badgeIconURL,
             "scoringCriteria": challenge_data.scoringCriteria.dict(),
+            "category": challenge_data.category,
+            "tags": challenge_data.tags or [],
             "isActive": True,
             "createdBy": user_id,
             "createdAt": now,
             "updatedAt": now,
             "totalSubmissions": 0,
             "averageScore": 0.0,
-            "topScore": 0
+            "topScore": 0,
+            "participantCount": 0
         }
         
         result = await self._get_db()['challenges'].insert_one(challenge_doc)
@@ -95,8 +114,156 @@ class ChallengeService:
             description=challenge['description'],
             difficulty=challenge['difficulty'],
             badgeName=challenge['badgeName'],
-            badgeIconURL=challenge['badgeIconURL']
+            badgeIconURL=challenge['badgeIconURL'],
+            category=challenge.get('category'),
+            tags=challenge.get('tags', [])
         )
+
+    async def search_challenges(self, search_request: ChallengeSearchRequest) -> ChallengeListResponse:
+        """Search and filter challenges"""
+        db = self._get_db()
+        
+        # Build query
+        query = {}
+        
+        if search_request.active_only:
+            query["isActive"] = True
+        
+        if search_request.query:
+            query["$or"] = [
+                {"title": {"$regex": search_request.query, "$options": "i"}},
+                {"description": {"$regex": search_request.query, "$options": "i"}},
+                {"tags": {"$in": [search_request.query]}}
+            ]
+        
+        if search_request.type:
+            query["type"] = search_request.type
+        
+        if search_request.difficulty:
+            query["difficulty"] = search_request.difficulty
+        
+        if search_request.category:
+            query["category"] = search_request.category
+        
+        if search_request.tags:
+            query["tags"] = {"$in": search_request.tags}
+        
+        # Calculate skip
+        skip = (search_request.page - 1) * search_request.limit
+        
+        # Get challenges
+        cursor = db['challenges'].find(query).skip(skip).limit(search_request.limit).sort("createdAt", -1)
+        challenges = await cursor.to_list(length=search_request.limit)
+        
+        # Get total count
+        total = await db['challenges'].count_documents(query)
+        
+        # Convert to response models
+        challenge_responses = []
+        for challenge in challenges:
+            # Get participant count for each challenge
+            participant_count = await db['challenge_submissions'].count_documents({
+                "challengeId": str(challenge['_id'])
+            })
+            
+            challenge['participantCount'] = participant_count
+            
+            # Convert ObjectId to string and handle scoringCriteria
+            challenge['_id'] = str(challenge['_id'])
+            if isinstance(challenge.get('scoringCriteria'), dict):
+                challenge['scoringCriteria'] = ChallengeCriteria(**challenge['scoringCriteria'])
+            
+            challenge_responses.append(ChallengeResponse(**challenge))
+        
+        return ChallengeListResponse(
+            challenges=challenge_responses,
+            total=total,
+            page=search_request.page,
+            limit=search_request.limit
+        )
+
+    async def get_challenge_leaderboard(self, challenge_id: str, user_id: str) -> ChallengeLeaderboardResponse:
+        """Get leaderboard for a specific challenge"""
+        db = self._get_db()
+        
+        # Validate challenge exists
+        challenge = await db['challenges'].find_one({"_id": ObjectId(challenge_id)})
+        if not challenge:
+            raise HTTPException(status_code=404, detail="Challenge not found")
+        
+        # Get submissions with scores, ordered by score descending
+        pipeline = [
+            {"$match": {"challengeId": challenge_id, "totalScore": {"$ne": None}}},
+            {"$sort": {"totalScore": -1}},
+            {"$limit": 50},  # Top 50
+            {
+                "$lookup": {
+                    "from": "users",
+                    "localField": "userId",
+                    "foreignField": "_id",
+                    "as": "user"
+                }
+            },
+            {"$unwind": "$user"}
+        ]
+        
+        submissions = await db['challenge_submissions'].aggregate(pipeline).to_list(length=50)
+        
+        # Build leaderboard entries
+        entries = []
+        user_rank = None
+        
+        for rank, submission in enumerate(submissions, 1):
+            user_profile = {
+                "displayName": submission['user'].get('profile', {}).get('displayName', 'Unknown'),
+                "avatarUrl": submission['user'].get('profile', {}).get('avatarUrl'),
+                "level": submission['user'].get('stats', {}).get('level', 1)
+            }
+            
+            entry = ChallengeLeaderboardEntry(
+                rank=rank,
+                userId=str(submission['userId']),
+                userProfile=user_profile,
+                score=submission.get('totalScore', 0),
+                scoreBreakdown=submission.get('scoreBreakdown', {}),
+                submittedAt=submission['submittedAt'],
+                submissionId=str(submission['_id'])
+            )
+            entries.append(entry)
+            
+            # Track user's rank
+            if str(submission['userId']) == user_id:
+                user_rank = rank
+        
+        return ChallengeLeaderboardResponse(
+            challengeId=challenge_id,
+            challengeTitle=challenge['title'],
+            entries=entries,
+            total=len(entries),
+            userRank=user_rank
+        )
+
+    async def get_challenge_categories(self) -> List[str]:
+        """Get all challenge categories"""
+        db = self._get_db()
+        
+        # Get unique categories
+        categories = await db['challenges'].distinct("category")
+        return [cat for cat in categories if cat]  # Filter out None/empty values
+
+    async def get_challenge_tags(self) -> List[str]:
+        """Get all challenge tags"""
+        db = self._get_db()
+        
+        # Get all tags and flatten
+        all_tags = await db['challenges'].distinct("tags")
+        flat_tags = []
+        for tag_list in all_tags:
+            if tag_list:
+                flat_tags.extend(tag_list)
+        
+        # Return unique tags
+        return list(set(flat_tags))
     
     async def get_challenge_by_id(self, challenge_id: str) -> Optional[ChallengeResponse]:
         """Get a specific challenge by ID"""
@@ -424,5 +591,31 @@ async def list_challenges(
     active_only: bool = True,
     user_id: str = Depends(get_current_user_id)
 ):
-    """List challenges with pagination"""
-    return await challenge_service.list_challenges(page, limit, active_only) 
+    """List all challenges with pagination"""
+    return await challenge_service.list_challenges(page, limit, active_only)
+
+@challenge_router.post('/api/challenges/search', response_model=ChallengeListResponse)
+async def search_challenges(
+    search_request: ChallengeSearchRequest,
+    user_id: str = Depends(get_current_user_id)
+):
+    """Search and filter challenges"""
+    return await challenge_service.search_challenges(search_request)
+
+@challenge_router.get('/api/challenges/categories', response_model=List[str])
+async def get_challenge_categories(user_id: str = Depends(get_current_user_id)):
+    """Get all challenge categories"""
+    return await challenge_service.get_challenge_categories()
+
+@challenge_router.get('/api/challenges/tags', response_model=List[str])
+async def get_challenge_tags(user_id: str = Depends(get_current_user_id)):
+    """Get all challenge tags"""
+    return await challenge_service.get_challenge_tags()
+
+@challenge_router.get('/api/challenges/{challenge_id}/leaderboard', response_model=ChallengeLeaderboardResponse)
+async def get_challenge_leaderboard(
+    challenge_id: str,
+    user_id: str = Depends(get_current_user_id)
+):
+    """Get leaderboard for a specific challenge"""
+    return await challenge_service.get_challenge_leaderboard(challenge_id, user_id) 

@@ -115,4 +115,13 @@ def generate_thumbnail_key(user_id: str, session_id: str, file_extension: str = 
     """
     timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
     unique_id = str(uuid.uuid4())[:8]
-    return f"thumbnails/{user_id}/{session_id}/{timestamp}_{unique_id}.{file_extension}" 
+    return f"thumbnails/{user_id}/{session_id}/{timestamp}_{unique_id}.{file_extension}"
+
+def generate_challenge_video_key(user_id: str, challenge_id: str, file_extension: str = 'mp4') -> str:
+    """
+    Generate a unique S3 key for challenge videos
+    Format: challenges/{user_id}/{challenge_id}/{timestamp}.{extension}
+    """
+    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    unique_id = str(uuid.uuid4())[:8]
+    return f"challenges/{user_id}/{challenge_id}/{timestamp}_{unique_id}.{file_extension}" 

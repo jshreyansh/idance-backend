@@ -240,6 +240,36 @@ Authorization: Bearer <access_token>
 
 ## 🎯 Challenge System
 
+### **POST /api/challenges**
+**Description:** Create a new challenge (admin only)  
+**Authentication:** Required  
+
+**Request Body:**
+```json
+{
+    "title": "Freestyle Friday",
+    "description": "Show your best freestyle moves!",
+    "type": "freestyle",
+    "difficulty": "intermediate",
+    "startTime": "2025-01-28T00:00:00Z",
+    "endTime": "2025-01-28T23:59:59Z",
+    "demoVideoFileKey": "demos/freestyle_demo.mp4",
+    "points": 100,
+    "badgeName": "Freestyle Master",
+    "badgeIconURL": "https://example.com/badge.png",
+    "category": "dance",
+    "tags": ["freestyle", "dance", "challenge"]
+}
+```
+
+**Response:**
+```json
+{
+    "challenge_id": "ch_123",
+    "message": "Challenge created successfully"
+}
+```
+
 ### **GET /api/challenges/today**
 **Description:** Get today's active challenge  
 **Authentication:** Required  
@@ -248,26 +278,108 @@ Authorization: Bearer <access_token>
 ```json
 {
     "id": "ch_123",
-    "title": "Morning Flow Challenge",
-    "description": "Start your day with smooth movements",
+    "title": "Freestyle Friday",
     "type": "freestyle",
-    "difficulty": "beginner",
-    "startTime": "2025-01-28T00:00:00Z",
-    "endTime": "2025-01-28T23:59:59Z",
-    "demoVideoURL": "https://s3.amazonaws.com/...",
-    "thumbnailURL": "https://s3.amazonaws.com/...",
+    "timeRemaining": "23:45:30",
+    "demoVideoURL": "https://example.com/demo.mp4",
     "points": 100,
-    "badgeName": "Morning Flow Master",
+    "participantCount": 45,
+    "description": "Show your best freestyle moves!",
+    "difficulty": "intermediate",
+    "badgeName": "Freestyle Master",
     "badgeIconURL": "https://example.com/badge.png",
-    "scoringCriteria": {
-        "balance": 25,
-        "rhythm": 30,
-        "smoothness": 25,
-        "creativity": 20
-    },
-    "totalSubmissions": 1247,
-    "averageScore": 78.5,
-    "topScore": 95
+    "category": "dance",
+    "tags": ["freestyle", "dance", "challenge"]
+}
+```
+
+### **POST /api/challenges/search**
+**Description:** Search and filter challenges  
+**Authentication:** Required  
+
+**Request Body:**
+```json
+{
+    "query": "freestyle",
+    "type": "freestyle",
+    "difficulty": "intermediate",
+    "category": "dance",
+    "tags": ["freestyle", "dance"],
+    "active_only": true,
+    "page": 1,
+    "limit": 20
+}
+```
+
+**Response:**
+```json
+{
+    "challenges": [
+        {
+            "id": "ch_123",
+            "title": "Freestyle Friday",
+            "type": "freestyle",
+            "difficulty": "intermediate",
+            "participantCount": 45,
+            "category": "dance",
+            "tags": ["freestyle", "dance"]
+        }
+    ],
+    "total": 1,
+    "page": 1,
+    "limit": 20
+}
+```
+
+### **GET /api/challenges/categories**
+**Description:** Get all challenge categories  
+**Authentication:** Required  
+
+**Response:**
+```json
+["dance", "fitness", "tutorial", "competition"]
+```
+
+### **GET /api/challenges/tags**
+**Description:** Get all challenge tags  
+**Authentication:** Required  
+
+**Response:**
+```json
+["freestyle", "dance", "challenge", "fitness", "tutorial"]
+```
+
+### **GET /api/challenges/{challenge_id}/leaderboard**
+**Description:** Get leaderboard for a specific challenge  
+**Authentication:** Required  
+
+**Response:**
+```json
+{
+    "challengeId": "ch_123",
+    "challengeTitle": "Freestyle Friday",
+    "entries": [
+        {
+            "rank": 1,
+            "userId": "user_456",
+            "userProfile": {
+                "displayName": "DanceQueen",
+                "avatarUrl": "https://example.com/avatar.jpg",
+                "level": 5
+            },
+            "score": 95,
+            "scoreBreakdown": {
+                "balance": 25,
+                "rhythm": 30,
+                "smoothness": 25,
+                "creativity": 15
+            },
+            "submittedAt": "2025-01-28T15:30:00Z",
+            "submissionId": "sub_789"
+        }
+    ],
+    "total": 1,
+    "userRank": 1
 }
 ```
 
@@ -449,16 +561,112 @@ Authorization: Bearer <access_token>
 
 ## 📤 Challenge Submissions
 
-### **POST /api/challenges/{challenge_id}/submit**
-**Description:** Submit a dance session to a challenge  
+### **POST /api/challenges/{challenge_id}/submit-unified**
+**Description:** Unified challenge submission - handles video upload, analysis, and metadata in one call (RECOMMENDED)  
 **Authentication:** Required  
 
 **Request Body:**
 ```json
 {
-    "sessionId": "sess_456",
-    "caption": "My best attempt!",
-    "tags": ["freestyle", "morning"]
+    "video_file": "base64_encoded_video_data_or_s3_file_key",
+    "metadata": {
+        "caption": "My challenge attempt!",
+        "tags": ["freestyle", "challenge"],
+        "location": "Mumbai, India",
+        "isPublic": true,
+        "sharedToFeed": true,
+        "highlightText": "Check out my moves!"
+    }
+}
+```
+
+**Response:**
+```json
+{
+    "id": "submission_id",
+    "challengeId": "challenge_id",
+    "userId": "user_id",
+    "video": {
+        "url": "https://bucket.s3.amazonaws.com/...",
+        "file_key": "challenges/user123/challenge456/...",
+        "duration": 60,
+        "size_mb": 25.5
+    },
+    "analysis": {
+        "status": "pending",
+        "score": null,
+        "breakdown": null,
+        "feedback": null,
+        "pose_data_url": null,
+        "confidence": null
+    },
+    "metadata": {
+        "caption": "My challenge attempt!",
+        "tags": ["freestyle", "challenge"],
+        "location": "Mumbai, India",
+        "isPublic": true,
+        "sharedToFeed": true,
+        "highlightText": "Check out my moves!"
+    },
+    "userProfile": {
+        "displayName": "John Doe",
+        "avatarUrl": "https://...",
+        "level": 5
+    },
+    "timestamps": {
+        "submittedAt": "2025-01-28T15:30:00Z",
+        "processedAt": null,
+        "analyzedAt": null
+    },
+    "likes": [],
+    "comments": [],
+    "shares": 0
+}
+```
+
+**Status Codes:**
+- `200` - Success
+- `400` - Already submitted to this challenge
+- `404` - Challenge not found
+
+### **POST /api/s3/upload/challenge-video**
+**Description:** Get presigned URL for uploading challenge video to S3  
+**Authentication:** Required  
+
+**Request Body:**
+```json
+{
+    "challenge_id": "68885e917dcfd112158b2a10",
+    "file_extension": "mp4",
+    "content_type": "video/mp4",
+    "file_size_mb": 25.5
+}
+```
+
+**Response:**
+```json
+{
+    "upload_url": "https://bucket.s3.amazonaws.com/...",
+    "file_key": "challenges/user123/challenge456/20250128_153000_abc12345.mp4",
+    "content_type": "video/mp4",
+    "expires_in": 7200,
+    "file_url": "https://bucket.s3.amazonaws.com/challenges/user123/challenge456/20250128_153000_abc12345.mp4"
+}
+```
+
+### **PUT /api/submissions/{submission_id}/metadata**
+**Description:** Update submission metadata after analysis is complete  
+**Authentication:** Required  
+
+**Request Body:**
+```json
+{
+    "caption": "Updated caption!",
+    "tags": ["freestyle", "updated"],
+    "location": "Mumbai, India",
+    "isPublic": true,
+    "sharedToFeed": true,
+    "highlightText": "Updated highlight text"
 }
 ```
 
@@ -466,13 +674,13 @@ Authorization: Bearer <access_token>
 ```json
 {
     "submissionId": "sub_789",
-    "message": "Submission created successfully",
-    "status": "pending_analysis"
+    "message": "Submission metadata updated successfully",
+    "status": "completed"
 }
 ```
 
 ### **GET /api/challenges/{challenge_id}/submissions**
-**Description:** Get submissions for a challenge  
+**Description:** Get submissions for a specific challenge  
 **Authentication:** Required  
 
 **Query Parameters:**
@@ -485,69 +693,68 @@ Authorization: Bearer <access_token>
     "submissions": [
         {
             "id": "sub_789",
-            "userId": "user_123",
+            "userId": "user123",
+            "challengeId": "challenge456",
             "sessionId": "sess_456",
-            "totalScore": 87,
+            "totalScore": 85,
             "scoreBreakdown": {
-                "balance": 22,
-                "rhythm": 26,
-                "smoothness": 19,
+                "balance": 20,
+                "rhythm": 25,
+                "smoothness": 20,
                 "creativity": 20
             },
-            "badgeAwarded": "Smooth Operator",
+            "badgeAwarded": "gold",
+            "poseDataURL": "https://...",
+            "analysisComplete": true,
+            "likes": [],
+            "comments": [],
+            "shares": 0,
+            "submittedAt": "2025-01-28T15:30:00Z",
+            "processedAt": "2025-01-28T15:35:00Z",
             "userProfile": {
-                "displayName": "DanceQueen",
-                "avatarUrl": "https://example.com/avatar.jpg",
+                "displayName": "John Doe",
+                "avatarUrl": "https://...",
                 "level": 5
-            },
-            "submittedAt": "2025-01-28T15:30:00Z"
+            }
         }
     ],
-    "pagination": {
-        "page": 1,
-        "totalPages": 15,
-        "totalCount": 1450
-    }
+    "total": 1,
+    "page": 1,
+    "limit": 20
 }
 ```
 
 ### **GET /api/submissions/{submission_id}**
-**Description:** Get specific submission details  
+**Description:** Get a specific submission  
 **Authentication:** Required  
 
 **Response:**
 ```json
 {
     "id": "sub_789",
-    "userId": "user_123",
-    "challengeId": "ch_123",
+    "userId": "user123",
+    "challengeId": "challenge456",
     "sessionId": "sess_456",
-    "totalScore": 87,
+    "totalScore": 85,
     "scoreBreakdown": {
-        "balance": 22,
-        "rhythm": 26,
-        "smoothness": 19,
+        "balance": 20,
+        "rhythm": 25,
+        "smoothness": 20,
         "creativity": 20
     },
-    "badgeAwarded": "Smooth Operator",
-    "poseDataURL": "s3://pose-data/sub_789/pose_data.json",
+    "badgeAwarded": "gold",
+    "poseDataURL": "https://...",
     "analysisComplete": true,
-    "likes": ["user_456", "user_789"],
-    "comments": [
-        {
-            "id": "cmt_123",
-            "userId": "user_456",
-            "userProfile": {
-                "displayName": "DanceFan",
-                "avatarUrl": "https://example.com/avatar2.jpg"
-            },
-            "content": "Amazing moves! 🔥",
-            "createdAt": "2025-01-28T16:00:00Z"
-        }
-    ],
-    "shares": 5,
+    "likes": [],
+    "comments": [],
+    "shares": 0,
     "submittedAt": "2025-01-28T15:30:00Z",
-    "processedAt": "2025-01-28T15:32:00Z"
+    "processedAt": "2025-01-28T15:35:00Z",
+    "userProfile": {
+        "displayName": "John Doe",
+        "avatarUrl": "https://...",
+        "level": 5
+    }
 }
 ```
 
@@ -559,26 +766,7 @@ Authorization: Bearer <access_token>
 - `page` (optional): Page number (default: 1)
 - `limit` (optional): Items per page (default: 20)
 
-**Response:**
-```json
-{
-    "submissions": [
-        {
-            "id": "sub_789",
-            "challengeId": "ch_123",
-            "challengeTitle": "Morning Flow Challenge",
-            "totalScore": 87,
-            "badgeAwarded": "Smooth Operator",
-            "submittedAt": "2025-01-28T15:30:00Z"
-        }
-    ],
-    "pagination": {
-        "page": 1,
-        "totalPages": 5,
-        "totalCount": 100
-    }
-}
-```
+**Response:** Same as challenge submissions list
 
 ---
 

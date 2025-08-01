@@ -213,47 +213,25 @@ class SubmissionService:
                 }
             )
             
-            # 🚀 Trigger AI analysis automatically and wait for completion
-            analysis_completed = False
+            # 🚀 Trigger AI analysis automatically
             try:
-                # Run AI analysis synchronously for unified submission
-                analysis_result = await self._run_ai_analysis_sync(submission_id, session_doc, challenge)
-                if analysis_result:
-                    # Update submission with analysis results
-                    await self._update_submission_with_analysis(submission_id, analysis_result)
-                    analysis_completed = True
-                    logger.info(f"✅ AI analysis completed for unified submission {submission_id}")
-                else:
-                    logger.warning(f"⚠️ AI analysis returned no result for unified submission {submission_id}")
+                await self._trigger_ai_analysis(submission_id, session_doc, challenge)
+                logger.info(f"✅ AI analysis triggered for unified submission {submission_id}")
             except Exception as e:
                 logger.error(f"⚠️ AI analysis failed for unified submission {submission_id}: {e}")
                 # Don't fail the submission if AI analysis fails
             
-            # Get updated submission data if analysis completed
-            if analysis_completed:
-                updated_submission = await db['challenge_submissions'].find_one({"_id": ObjectId(submission_id)})
-                if updated_submission:
-                    submission_doc["analysis"] = updated_submission["analysis"]
-                    submission_doc["timestamps"] = updated_submission["timestamps"]
-            
             logger.info(f"✅ User {user_id} submitted unified challenge {challenge_id}")
             
-            # Create timestamps with proper datetime objects
-            timestamps = {
-                "submittedAt": now,
-                "processedAt": submission_doc["timestamps"].get("processedAt"),
-                "analyzedAt": submission_doc["timestamps"].get("analyzedAt")
-            }
-            
             return UnifiedSubmissionResponse(
-                _id=submission_id,  # Use _id alias
+                id=submission_id,
                 challengeId=challenge_id,
                 userId=user_id,
                 video=video_data,
                 analysis=submission_doc["analysis"],
                 metadata=submission_request.metadata,
                 userProfile=user_profile,
-                timestamps=timestamps,
+                timestamps=submission_doc["timestamps"],
                 likes=[],
                 comments=[],
                 shares=0
@@ -353,36 +331,21 @@ class SubmissionService:
             logger.error(f"❌ Error in AI analysis trigger: {e}")
             raise
 
-    async def _update_submission_with_analysis(self, submission_id: str, analysis_result) -> None:
+    async def _update_submission_with_analysis(self, submission_id: str, analysis_result: dict) -> None:
         """Update submission with AI analysis results"""
         try:
             db = self._get_db()
             
-            # Handle both dict and AnalysisResponse objects
-            if hasattr(analysis_result, 'total_score'):
-                # It's an AnalysisResponse object
-                update_data = {
-                    "analysis.status": "completed",
-                    "analysis.score": analysis_result.total_score,
-                    "analysis.breakdown": analysis_result.score_breakdown.dict() if analysis_result.score_breakdown else None,
-                    "analysis.feedback": analysis_result.feedback,
-                    "analysis.pose_data_url": analysis_result.pose_data_url,
-                    "analysis.confidence": 0.0,  # Default confidence
-                    "timestamps.analyzedAt": datetime.utcnow(),
-                    "updatedAt": datetime.utcnow()
-                }
-            else:
-                # It's a dictionary (legacy support)
-                update_data = {
-                    "analysis.status": "completed",
-                    "analysis.score": analysis_result.get("total_score"),
-                    "analysis.breakdown": analysis_result.get("score_breakdown"),
-                    "analysis.feedback": analysis_result.get("feedback"),
-                    "analysis.pose_data_url": analysis_result.get("pose_data_url"),
-                    "analysis.confidence": analysis_result.get("confidence", 0.0),
-                    "timestamps.analyzedAt": datetime.utcnow(),
-                    "updatedAt": datetime.utcnow()
-                }
+            update_data = {
+                "analysis.status": "completed",
+                "analysis.score": analysis_result.get("total_score"),
+                "analysis.breakdown": analysis_result.get("score_breakdown"),
+                "analysis.feedback": analysis_result.get("feedback"),
+                "analysis.pose_data_url": analysis_result.get("pose_data_url"),
+                "analysis.confidence": analysis_result.get("confidence", 0.0),
+                "timestamps.analyzedAt": datetime.utcnow(),
+                "updatedAt": datetime.utcnow()
+            }
             
             # Update submission
             result = await db['challenge_submissions'].update_one(
@@ -546,37 +509,6 @@ class SubmissionService:
         except Exception as e:
             logger.error(f"❌ Error processing video upload: {e}")
             raise HTTPException(status_code=400, detail="Invalid video file")
-
-    async def _run_ai_analysis_sync(self, submission_id: str, session: dict, challenge: dict):
-        """Run AI analysis synchronously and return results"""
-        try:
-            # Get video URL from session
-            video_url = session.get("videoURL")
-            if not video_url:
-                logger.warning(f"No video URL found for session {session.get('_id')}")
-                return None
-            
-            # Import AI service
-            from services.ai.pose_analysis import pose_analysis_service
-            from services.ai.models import AnalysisRequest
-            
-            # Create analysis request
-            analysis_request = AnalysisRequest(
-                submission_id=submission_id,
-                video_url=video_url,
-                challenge_type=challenge.get("type", "freestyle"),
-                target_bpm=None  # Could be extracted from challenge metadata
-            )
-            
-            # Run pose analysis synchronously
-            analysis_result = await pose_analysis_service.analyze_pose(analysis_request)
-            
-            logger.info(f"✅ Synchronous AI analysis completed for submission {submission_id}")
-            return analysis_result
-            
-        except Exception as e:
-            logger.error(f"❌ Error in synchronous AI analysis: {e}")
-            return None
 
 # Global service instance
 submission_service = SubmissionService()
