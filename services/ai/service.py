@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
-from services.ai.models import AnalysisRequest, AnalysisResponse
+from services.ai.models import AnalysisRequest, AnalysisResponse, DanceBreakdownRequest, DanceBreakdownResponse
 from services.ai.pose_analysis import pose_analysis_service
+from services.ai.dance_breakdown import dance_breakdown_service
 from services.user.service import get_current_user_id
 from typing import Dict
 import logging
@@ -89,4 +90,88 @@ async def score_submission(
         
     except Exception as e:
         logger.error(f"❌ Error in manual scoring: {e}")
-        raise HTTPException(status_code=500, detail=f"Scoring failed: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Scoring failed: {str(e)}")
+
+# ===== DANCE BREAKDOWN ENDPOINTS =====
+
+@ai_router.post('/api/ai/dance-breakdown', response_model=DanceBreakdownResponse)
+async def create_dance_breakdown(
+    request: DanceBreakdownRequest,
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Create step-by-step dance breakdown from YouTube/Instagram URL
+    """
+    try:
+        logger.info(f"🎬 Dance breakdown requested for URL: {request.video_url}")
+        logger.info(f"🎬 Mode: {request.mode}")
+        
+        # Process dance breakdown
+        result = await dance_breakdown_service.process_dance_breakdown(request, user_id)
+        
+        if not result.success:
+            raise HTTPException(status_code=500, detail=result.error_message or "Dance breakdown failed")
+        
+        logger.info(f"✅ Dance breakdown completed successfully")
+        logger.info(f"📊 Generated {len(result.steps)} steps")
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error in dance breakdown endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Dance breakdown failed: {str(e)}")
+
+@ai_router.get('/api/ai/dance-breakdown/{breakdown_id}')
+async def get_dance_breakdown(
+    breakdown_id: str,
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Get specific dance breakdown by ID
+    """
+    try:
+        logger.info(f"📋 Getting breakdown {breakdown_id} for user {user_id}")
+        
+        breakdown = await dance_breakdown_service.get_breakdown_by_id(breakdown_id, user_id)
+        
+        if not breakdown:
+            raise HTTPException(status_code=404, detail="Dance breakdown not found or not owned by user")
+        
+        return breakdown
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error getting dance breakdown: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get breakdown: {str(e)}")
+
+@ai_router.get('/api/ai/dance-breakdowns')
+async def get_user_dance_breakdowns(
+    limit: int = 20,
+    skip: int = 0,
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Get user's dance breakdown history
+    """
+    try:
+        logger.info(f"📊 Getting breakdown history for user {user_id} (limit: {limit}, skip: {skip})")
+        
+        breakdowns = await dance_breakdown_service.get_user_breakdowns(user_id, limit, skip)
+        
+        return {
+            "success": True,
+            "total": len(breakdowns),
+            "breakdowns": breakdowns,
+            "pagination": {
+                "limit": limit,
+                "skip": skip,
+                "has_more": len(breakdowns) == limit
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting user breakdowns: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get breakdowns: {str(e)}") 

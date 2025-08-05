@@ -78,4 +78,53 @@ class CompleteFeedback(BaseModel):
     components: List[FeedbackComponent]
     overall_message: str
     improvement_suggestions: List[str]
-    generated_at: datetime 
+    generated_at: datetime
+
+# ===== DANCE BREAKDOWN MODELS =====
+
+class DanceBreakdownRequest(BaseModel):
+    """Request for dance breakdown from URL"""
+    video_url: str
+    mode: str = "auto"  # "auto" or "manual"
+    target_difficulty: Optional[str] = "beginner"  # beginner, intermediate, advanced
+
+class DanceStep(BaseModel):
+    """Individual dance step breakdown"""
+    step_number: int
+    start_timestamp: str  # MM:SS.mmm format
+    end_timestamp: str    # MM:SS.mmm format
+    step_name: str
+    global_description: str
+    description: Dict[str, str]  # head, hands, shoulders, torso, legs, bodyAngle
+    style_and_history: str
+    spice_it_up: str
+    connection_to_next: Optional[str] = None
+    technical_notes: Optional[Dict[str, str]] = None
+    quality_metrics: Optional[Dict[str, str]] = None
+
+class DanceBreakdownResponse(BaseModel):
+    """Response from dance breakdown analysis"""
+    success: bool
+    video_url: str
+    title: str
+    duration: float
+    bpm: Optional[float] = None
+    difficulty_level: str
+    total_steps: int
+    routine_analysis: Dict[str, Any]
+    steps: List[DanceStep]
+    outline_url: Optional[str] = None
+    mode: str
+    error_message: Optional[str] = None
+
+class DanceBreakdownStatus(BaseModel):
+    """Status tracking for dance breakdown processing"""
+    breakdown_id: str
+    user_id: str
+    video_url: str
+    status: str  # "processing", "completed", "failed"
+    progress: float = 0.0
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+    result: Optional[DanceBreakdownResponse] = None
+    error_message: Optional[str] = None 

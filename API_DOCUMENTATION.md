@@ -15,11 +15,12 @@
 4. [Challenge System](#challenge-system)
 5. [Challenge Submissions](#challenge-submissions)
 6. [AI & Scoring Engine](#ai--scoring-engine)
-7. [Real Video Analysis Features](#-real-video-analysis-features)
-8. [Background Jobs](#background-jobs)
-9. [S3 File Management](#s3-file-management)
-10. [Feed System](#feed-system)
-11. [Health Checks](#health-checks)
+7. [Dance Breakdown System](#dance-breakdown-system)
+8. [Real Video Analysis Features](#-real-video-analysis-features)
+9. [Background Jobs](#background-jobs)
+10. [S3 File Management](#s3-file-management)
+11. [Feed System](#feed-system)
+12. [Health Checks](#health-checks)
 
 ---
 
@@ -101,687 +102,215 @@ Authorization: Bearer <access_token>
 }
 ```
 
-### **GET /api/users/stats**
-**Description:** Get user statistics  
-**Authentication:** Required  
-
-**Response:**
-```json
-{
-    "totalSessions": 25,
-    "totalDuration": 3600,
-    "averageSessionDuration": 144,
-    "favoriteDanceStyle": "hip-hop",
-    "weeklyProgress": {
-        "sessions": 5,
-        "duration": 300
-    }
-}
-```
-
 ---
 
-## 🎬 Session Management
+## 🎬 Dance Breakdown System
 
-### **POST /api/sessions/start**
-**Description:** Start a new dance session  
+### **POST /api/ai/dance-breakdown**
+**Description:** Create step-by-step dance breakdown from YouTube/Instagram URL  
 **Authentication:** Required  
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
 
 **Request Body:**
 ```json
 {
-    "title": "Morning Dance Session",
-    "description": "Great morning workout",
-    "danceStyle": "hip-hop",
-    "location": "Mumbai",
-    "duration": 180,
-    "tags": ["morning", "workout", "hip-hop"]
+    "video_url": "https://www.youtube.com/watch?v=example",
+    "mode": "auto",
+    "target_difficulty": "beginner"
 }
 ```
 
 **Response:**
 ```json
 {
-    "sessionId": "sess_123456",
-    "message": "Session started successfully",
-    "session": {
-        "id": "sess_123456",
-        "title": "Morning Dance Session",
-        "status": "active",
-        "startTime": "2025-01-28T10:00:00Z",
-        "danceStyle": "hip-hop"
-    }
-}
-```
-
-### **PUT /api/sessions/{session_id}/complete**
-**Description:** Complete a dance session  
-**Authentication:** Required  
-
-**Request Body:**
-```json
-{
-    "videoFileKey": "sessions/user_123/session_456/video.mp4",
-    "thumbnailFileKey": "sessions/user_123/session_456/thumbnail.jpg",
-    "duration": 180,
-    "notes": "Great session today!"
-}
-```
-
-**Response:**
-```json
-{
-    "message": "Session completed successfully",
-    "session": {
-        "id": "sess_123456",
-        "status": "completed",
-        "videoUrl": "https://s3.amazonaws.com/...",
-        "thumbnailUrl": "https://s3.amazonaws.com/...",
-        "duration": 180
-    }
-}
-```
-
-### **GET /api/sessions**
-**Description:** Get user's dance sessions  
-**Authentication:** Required  
-
-**Query Parameters:**
-- `page` (optional): Page number (default: 1)
-- `limit` (optional): Items per page (default: 20)
-- `status` (optional): Filter by status ("active", "completed")
-
-**Response:**
-```json
-{
-    "sessions": [
-        {
-            "id": "sess_123456",
-            "title": "Morning Dance Session",
-            "status": "completed",
-            "danceStyle": "hip-hop",
-            "duration": 180,
-            "videoUrl": "https://s3.amazonaws.com/...",
-            "thumbnailUrl": "https://s3.amazonaws.com/...",
-            "createdAt": "2025-01-28T10:00:00Z"
+    "success": true,
+    "video_url": "https://www.youtube.com/watch?v=example",
+    "title": "Dance Video Analysis",
+    "duration": 30.0,
+    "bpm": 120.5,
+    "difficulty_level": "Intermediate",
+    "total_steps": 8,
+    "routine_analysis": {
+        "bpm": 120.5,
+        "total_segments": 8,
+        "style_indicators": {
+            "rhythm_consistency": "High",
+            "flow_smoothness": "Medium",
+            "symmetry": "Balanced"
+        },
+        "difficulty_level": "Intermediate",
+        "energy_level": "Medium",
+        "overall_routine_characteristics": {
+            "tempo": "The routine is set to a moderate tempo of 120.5 BPM",
+            "rhythm_consistency": "The routine maintains a steady beat",
+            "flow_smoothness": "Transitions between movements are fluid",
+            "symmetry": "The routine has a good balance between left and right movements",
+            "difficulty_level": "Suitable for dancers with some experience",
+            "energy_level": "Engaging and dynamic without being overly exhausting"
         }
-    ],
-    "pagination": {
-        "page": 1,
-        "totalPages": 5,
-        "totalCount": 100
-    }
-}
-```
-
-### **GET /api/sessions/{session_id}**
-**Description:** Get specific session details  
-**Authentication:** Required  
-
-**Response:**
-```json
-{
-    "id": "sess_123456",
-    "title": "Morning Dance Session",
-    "description": "Great morning workout",
-    "status": "completed",
-    "danceStyle": "hip-hop",
-    "duration": 180,
-    "videoUrl": "https://s3.amazonaws.com/...",
-    "thumbnailUrl": "https://s3.amazonaws.com/...",
-    "notes": "Great session today!",
-    "tags": ["morning", "workout", "hip-hop"],
-    "createdAt": "2025-01-28T10:00:00Z",
-    "completedAt": "2025-01-28T10:03:00Z"
-}
-```
-
----
-
-## 🎯 Challenge System
-
-### **POST /api/challenges**
-**Description:** Create a new challenge (admin only)  
-**Authentication:** Required  
-
-**Request Body:**
-```json
-{
-    "title": "Freestyle Friday",
-    "description": "Show your best freestyle moves!",
-    "type": "freestyle",
-    "difficulty": "intermediate",
-    "startTime": "2025-01-28T00:00:00Z",
-    "endTime": "2025-01-28T23:59:59Z",
-    "demoVideoFileKey": "demos/freestyle_demo.mp4",
-    "points": 100,
-    "badgeName": "Freestyle Master",
-    "badgeIconURL": "https://example.com/badge.png",
-    "category": "dance",
-    "tags": ["freestyle", "dance", "challenge"]
-}
-```
-
-**Response:**
-```json
-{
-    "challenge_id": "ch_123",
-    "message": "Challenge created successfully"
-}
-```
-
-### **GET /api/challenges/today**
-**Description:** Get today's active challenge  
-**Authentication:** Required  
-
-**Response:**
-```json
-{
-    "id": "ch_123",
-    "title": "Freestyle Friday",
-    "type": "freestyle",
-    "timeRemaining": "23:45:30",
-    "demoVideoURL": "https://example.com/demo.mp4",
-    "points": 100,
-    "participantCount": 45,
-    "description": "Show your best freestyle moves!",
-    "difficulty": "intermediate",
-    "badgeName": "Freestyle Master",
-    "badgeIconURL": "https://example.com/badge.png",
-    "category": "dance",
-    "tags": ["freestyle", "dance", "challenge"]
-}
-```
-
-### **POST /api/challenges/search**
-**Description:** Search and filter challenges  
-**Authentication:** Required  
-
-**Request Body:**
-```json
-{
-    "query": "freestyle",
-    "type": "freestyle",
-    "difficulty": "intermediate",
-    "category": "dance",
-    "tags": ["freestyle", "dance"],
-    "active_only": true,
-    "page": 1,
-    "limit": 20
-}
-```
-
-**Response:**
-```json
-{
-    "challenges": [
+    },
+    "steps": [
         {
-            "id": "ch_123",
-            "title": "Freestyle Friday",
-            "type": "freestyle",
-            "difficulty": "intermediate",
-            "participantCount": 45,
-            "category": "dance",
-            "tags": ["freestyle", "dance"]
-        }
-    ],
-    "total": 1,
-    "page": 1,
-    "limit": 20
-}
-```
-
-### **GET /api/challenges/categories**
-**Description:** Get all challenge categories  
-**Authentication:** Required  
-
-**Response:**
-```json
-["dance", "fitness", "tutorial", "competition"]
-```
-
-### **GET /api/challenges/tags**
-**Description:** Get all challenge tags  
-**Authentication:** Required  
-
-**Response:**
-```json
-["freestyle", "dance", "challenge", "fitness", "tutorial"]
-```
-
-### **GET /api/challenges/{challenge_id}/leaderboard**
-**Description:** Get leaderboard for a specific challenge  
-**Authentication:** Required  
-
-**Response:**
-```json
-{
-    "challengeId": "ch_123",
-    "challengeTitle": "Freestyle Friday",
-    "entries": [
-        {
-            "rank": 1,
-            "userId": "user_456",
-            "userProfile": {
-                "displayName": "DanceQueen",
-                "avatarUrl": "https://example.com/avatar.jpg",
-                "level": 5
+            "step_number": 1,
+            "start_timestamp": "00:00.000",
+            "end_timestamp": "00:02.460",
+            "step_name": "Right Hand Flourish",
+            "global_description": "Start with a graceful flourish of your right hand, moving it elegantly from the wrist and fingers.",
+            "description": {
+                "head": "Keep your head facing forward, with a slight tilt to the right to follow the hand movement.",
+                "hands": "Extend your right hand outwards, starting with the pinky and moving through the index and thumb. Let your wrist and elbow follow in a fluid motion.",
+                "shoulders": "Relax your shoulders, allowing the right shoulder to drop slightly as your hand moves.",
+                "torso": "Maintain a straight posture, with a slight lean to the right to complement the hand movement.",
+                "legs": "Keep your legs steady and slightly apart for balance.",
+                "bodyAngle": "Face forward with a slight angle to the right, aligning with the hand movement."
             },
-            "score": 95,
-            "scoreBreakdown": {
-                "balance": 25,
-                "rhythm": 30,
-                "smoothness": 25,
-                "creativity": 15
+            "style_and_history": "This movement is a modern fusion, often seen in contemporary dance where expressive hand movements are used to convey emotion.",
+            "spice_it_up": "Add a gentle wrist flick at the end for a touch of flair.",
+            "connection_to_next": "This hand flourish naturally leads into the next step by shifting your weight to the left foot.",
+            "technical_notes": {
+                "alignment": "Maintain neutral spine alignment",
+                "timing": "Follow the beat of the music",
+                "energy": "Keep movements fluid and controlled",
+                "precision": "Focus on clean hand positioning"
             },
-            "submittedAt": "2025-01-28T15:30:00Z",
-            "submissionId": "sub_789"
+            "quality_metrics": {
+                "smoothness": "High",
+                "stability": "Good",
+                "precision": "Excellent",
+                "energy": "Moderate",
+                "balance": "Maintained"
+            }
         }
     ],
-    "total": 1,
-    "userRank": 1
-}
-```
-
-### **GET /api/challenges/upcoming**
-**Description:** Get upcoming challenges for next N days  
-**Authentication:** Required  
-
-**Query Parameters:**
-- `days` (optional): Number of days to look ahead (default: 7)
-
-**Response:**
-```json
-[
-    {
-        "id": "ch_124",
-        "title": "Spin Master Challenge",
-        "description": "Master the art of spinning",
-        "type": "spin",
-        "difficulty": "intermediate",
-        "startTime": "2025-01-29T00:00:00Z",
-        "endTime": "2025-01-29T23:59:59Z",
-        "demoVideoURL": "https://s3.amazonaws.com/...",
-        "points": 150,
-        "badgeName": "Spin Master"
-    }
-]
-```
-
-### **GET /api/challenges/{challenge_id}**
-**Description:** Get specific challenge details  
-**Authentication:** Required  
-
-**Response:**
-```json
-{
-    "id": "ch_123",
-    "title": "Morning Flow Challenge",
-    "description": "Start your day with smooth movements",
-    "type": "freestyle",
-    "difficulty": "beginner",
-    "startTime": "2025-01-28T00:00:00Z",
-    "endTime": "2025-01-28T23:59:59Z",
-    "demoVideoURL": "https://s3.amazonaws.com/...",
-    "thumbnailURL": "https://s3.amazonaws.com/...",
-    "points": 100,
-    "badgeName": "Morning Flow Master",
-    "badgeIconURL": "https://example.com/badge.png",
-    "scoringCriteria": {
-        "balance": 25,
-        "rhythm": 30,
-        "smoothness": 25,
-        "creativity": 20
-    },
-    "isActive": true,
-    "totalSubmissions": 1247,
-    "averageScore": 78.5,
-    "topScore": 95
-}
-```
-
-### **GET /api/challenges**
-**Description:** List all challenges with pagination  
-**Authentication:** Required  
-
-**Query Parameters:**
-- `page` (optional): Page number (default: 1)
-- `limit` (optional): Items per page (default: 20)
-- `active_only` (optional): Show only active challenges (default: true)
-
-**Response:**
-```json
-{
-    "challenges": [
-        {
-            "id": "ch_123",
-            "title": "Morning Flow Challenge",
-            "type": "freestyle",
-            "difficulty": "beginner",
-            "startTime": "2025-01-28T00:00:00Z",
-            "endTime": "2025-01-28T23:59:59Z",
-            "points": 100,
-            "isActive": true,
-            "totalSubmissions": 1247
-        }
-    ],
-    "pagination": {
-        "page": 1,
-        "totalPages": 10,
-        "totalCount": 200
-    }
-}
-```
-
-### **POST /api/challenges**
-**Description:** Create a new challenge (Admin only)  
-**Authentication:** Required  
-
-**Request Body:**
-```json
-{
-    "title": "Freestyle Friday",
-    "description": "Show your best freestyle moves!",
-    "type": "freestyle",
-    "difficulty": "intermediate",
-    "startTime": "2025-01-28T00:00:00Z",
-    "endTime": "2025-01-28T23:59:59Z",
-    "demoVideoFileKey": "challenges/demo_123.mp4",
-    "points": 150,
-    "badgeName": "Freestyle Master",
-    "badgeIconURL": "https://example.com/badge.png",
-    "scoringCriteria": {
-        "balance": 25,
-        "rhythm": 30,
-        "smoothness": 25,
-        "creativity": 20
-    },
-    "thumbnailURL": "https://example.com/thumbnail.jpg"
-}
-```
-
-**Response:**
-```json
-{
-    "message": "Challenge created successfully",
-    "challengeId": "ch_125"
-}
-```
-
-### **PUT /api/challenges/{challenge_id}**
-**Description:** Update an existing challenge (Admin only)  
-**Authentication:** Required  
-
-**Request Body:** Same as POST /api/challenges
-
-**Response:**
-```json
-{
-    "message": "Challenge updated successfully",
-    "challengeId": "ch_125"
-}
-```
-
-### **DELETE /api/challenges/{challenge_id}**
-**Description:** Delete a challenge (Admin only)  
-**Authentication:** Required  
-
-**Response:**
-```json
-{
-    "message": "Challenge deleted successfully",
-    "challengeId": "ch_125"
-}
-```
-
-### **GET /api/challenges/{challenge_id}/stats**
-**Description:** Get comprehensive statistics for a challenge  
-**Authentication:** Required  
-
-**Response:**
-```json
-{
-    "challengeId": "ch_123",
-    "totalSubmissions": 1247,
-    "averageScore": 78.5,
-    "topScore": 95,
-    "scoreDistribution": {
-        "0-20": 50,
-        "21-40": 100,
-        "41-60": 200,
-        "61-80": 400,
-        "81-100": 497
-    },
-    "participationRate": 0.85,
-    "completionRate": 0.92
-}
-```
-
----
-
-## 📤 Challenge Submissions
-
-### **POST /api/challenges/{challenge_id}/submit-unified**
-**Description:** Unified challenge submission - handles video upload, analysis, and metadata in one call (RECOMMENDED)  
-**Authentication:** Required  
-
-**Request Body:**
-```json
-{
-    "video_file": "base64_encoded_video_data_or_s3_file_key",
-    "metadata": {
-        "caption": "My challenge attempt!",
-        "tags": ["freestyle", "challenge"],
-        "location": "Mumbai, India",
-        "isPublic": true,
-        "sharedToFeed": true,
-        "highlightText": "Check out my moves!"
-    }
-}
-```
-
-**Response:**
-```json
-{
-    "id": "submission_id",
-    "challengeId": "challenge_id",
-    "userId": "user_id",
-    "video": {
-        "url": "https://bucket.s3.amazonaws.com/...",
-        "file_key": "challenges/user123/challenge456/...",
-        "duration": 60,
-        "size_mb": 25.5
-    },
-    "analysis": {
-        "status": "pending",
-        "score": null,
-        "breakdown": null,
-        "feedback": null,
-        "pose_data_url": null,
-        "confidence": null
-    },
-    "metadata": {
-        "caption": "My challenge attempt!",
-        "tags": ["freestyle", "challenge"],
-        "location": "Mumbai, India",
-        "isPublic": true,
-        "sharedToFeed": true,
-        "highlightText": "Check out my moves!"
-    },
-    "userProfile": {
-        "displayName": "John Doe",
-        "avatarUrl": "https://...",
-        "level": 5
-    },
-    "timestamps": {
-        "submittedAt": "2025-01-28T15:30:00Z",
-        "processedAt": null,
-        "analyzedAt": null
-    },
-    "likes": [],
-    "comments": [],
-    "shares": 0
+    "outline_url": "http://localhost:8000/videos/default_outline.mp4",
+    "mode": "auto",
+    "error_message": null
 }
 ```
 
 **Status Codes:**
 - `200` - Success
-- `400` - Already submitted to this challenge
-- `404` - Challenge not found
+- `400` - Invalid request
+- `401` - Unauthorized
+- `500` - Processing error
 
-### **POST /api/s3/upload/challenge-video**
-**Description:** Get presigned URL for uploading challenge video to S3  
+### **GET /api/ai/dance-breakdowns**
+**Description:** Get user's dance breakdown history with pagination  
 **Authentication:** Required  
 
-**Request Body:**
-```json
-{
-    "challenge_id": "68885e917dcfd112158b2a10",
-    "file_extension": "mp4",
-    "content_type": "video/mp4",
-    "file_size_mb": 25.5
-}
+**Headers:**
 ```
-
-**Response:**
-```json
-{
-    "upload_url": "https://bucket.s3.amazonaws.com/...",
-    "file_key": "challenges/user123/challenge456/20250128_153000_abc12345.mp4",
-    "content_type": "video/mp4",
-    "expires_in": 7200,
-    "file_url": "https://bucket.s3.amazonaws.com/challenges/user123/challenge456/20250128_153000_abc12345.mp4"
-}
+Authorization: Bearer <access_token>
 ```
-
-### **PUT /api/submissions/{submission_id}/metadata**
-**Description:** Update submission metadata after analysis is complete  
-**Authentication:** Required  
-
-**Request Body:**
-```json
-{
-    "caption": "Updated caption!",
-    "tags": ["freestyle", "updated"],
-    "location": "Mumbai, India",
-    "isPublic": true,
-    "sharedToFeed": true,
-    "highlightText": "Updated highlight text"
-}
-```
-
-**Response:**
-```json
-{
-    "submissionId": "sub_789",
-    "message": "Submission metadata updated successfully",
-    "status": "completed"
-}
-```
-
-### **GET /api/challenges/{challenge_id}/submissions**
-**Description:** Get submissions for a specific challenge  
-**Authentication:** Required  
 
 **Query Parameters:**
-- `page` (optional): Page number (default: 1)
-- `limit` (optional): Items per page (default: 20)
+- `limit` (optional, default: 20): Number of breakdowns to return
+- `skip` (optional, default: 0): Number of breakdowns to skip
 
 **Response:**
 ```json
 {
-    "submissions": [
+    "success": true,
+    "total": 5,
+    "breakdowns": [
         {
-            "id": "sub_789",
-            "userId": "user123",
-            "challengeId": "challenge456",
-            "sessionId": "sess_456",
-            "totalScore": 85,
-            "scoreBreakdown": {
-                "balance": 20,
-                "rhythm": 25,
-                "smoothness": 20,
-                "creativity": 20
-            },
-            "badgeAwarded": "gold",
-            "poseDataURL": "https://...",
-            "analysisComplete": true,
-            "likes": [],
-            "comments": [],
-            "shares": 0,
-            "submittedAt": "2025-01-28T15:30:00Z",
-            "processedAt": "2025-01-28T15:35:00Z",
-            "userProfile": {
-                "displayName": "John Doe",
-                "avatarUrl": "https://...",
-                "level": 5
-            }
+            "_id": "677f1f77bcf86cd799439011",
+            "videoUrl": "https://www.youtube.com/shorts/example",
+            "title": "Dance Video Analysis",
+            "mode": "manual",
+            "targetDifficulty": "beginner",
+            "duration": 30.0,
+            "bpm": 120.5,
+            "difficultyLevel": "Intermediate",
+            "totalSteps": 15,
+            "success": true,
+            "createdAt": "2024-01-15T10:30:00Z"
         }
     ],
-    "total": 1,
-    "page": 1,
-    "limit": 20
-}
-```
-
-### **GET /api/submissions/{submission_id}**
-**Description:** Get a specific submission  
-**Authentication:** Required  
-
-**Response:**
-```json
-{
-    "id": "sub_789",
-    "userId": "user123",
-    "challengeId": "challenge456",
-    "sessionId": "sess_456",
-    "totalScore": 85,
-    "scoreBreakdown": {
-        "balance": 20,
-        "rhythm": 25,
-        "smoothness": 20,
-        "creativity": 20
-    },
-    "badgeAwarded": "gold",
-    "poseDataURL": "https://...",
-    "analysisComplete": true,
-    "likes": [],
-    "comments": [],
-    "shares": 0,
-    "submittedAt": "2025-01-28T15:30:00Z",
-    "processedAt": "2025-01-28T15:35:00Z",
-    "userProfile": {
-        "displayName": "John Doe",
-        "avatarUrl": "https://...",
-        "level": 5
+    "pagination": {
+        "limit": 20,
+        "skip": 0,
+        "has_more": false
     }
 }
 ```
 
-### **GET /api/users/{user_id}/submissions**
-**Description:** Get all submissions by a user  
+### **GET /api/ai/dance-breakdown/{breakdown_id}**
+**Description:** Get specific dance breakdown by ID (full details)  
 **Authentication:** Required  
 
-**Query Parameters:**
-- `page` (optional): Page number (default: 1)
-- `limit` (optional): Items per page (default: 20)
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
 
-**Response:** Same as challenge submissions list
+**Response:**
+```json
+{
+    "_id": "677f1f77bcf86cd799439011",
+    "userId": "677f1f77bcf86cd799439012",
+    "videoUrl": "https://www.youtube.com/shorts/example",
+    "title": "Dance Video Analysis",
+    "mode": "manual",
+    "targetDifficulty": "beginner",
+    "duration": 30.0,
+    "bpm": 120.5,
+    "difficultyLevel": "Intermediate",
+    "totalSteps": 15,
+    "routineAnalysis": {...},
+    "steps": [
+        {
+            "step_number": 1,
+            "start_timestamp": "00:00.000",
+            "end_timestamp": "00:02.000",
+            "step_name": "Opening Move",
+            "global_description": "Start with confidence",
+            "description": {
+                "head": "Keep centered",
+                "hands": "Relaxed at sides",
+                "shoulders": "Level and back",
+                "torso": "Engaged core",
+                "legs": "Hip-width stance",
+                "bodyAngle": "Face forward"
+            },
+            "style_and_history": "Contemporary fusion",
+            "spice_it_up": "Add personal flair"
+        }
+    ],
+    "outlineUrl": "http://localhost:8000/videos/outline.mp4",
+    "success": true,
+    "createdAt": "2024-01-15T10:30:00Z",
+    "updatedAt": "2024-01-15T10:30:00Z"
+}
+```
+
+**Status Codes:**
+- `200` - Success
+- `404` - Breakdown not found or not owned by user
+- `401` - Unauthorized
 
 ---
 
-## 🤖 AI & Scoring Engine (Real Video Analysis)
+## 🤖 AI & Scoring Engine
 
 ### **POST /api/ai/analyze-pose**
-**Description:** Trigger real MediaPipe pose analysis for a video submission  
+**Description:** Trigger pose analysis for a video submission  
 **Authentication:** Required  
-**Processing Time:** 1-3 minutes for typical dance videos (22 seconds = ~2 minutes)  
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
 
 **Request Body:**
 ```json
 {
-    "submission_id": "507f1f77bcf86cd799439011",
-    "video_url": "https://tanmay3188.s3.ap-south-1.amazonaws.com/dance101.MP4",
+    "submission_id": "68877865e63d6bd72cdda440",
+    "video_url": "https://example.com/video.mp4",
     "challenge_type": "freestyle",
     "target_bpm": 120
 }
@@ -790,37 +319,22 @@ Authorization: Bearer <access_token>
 **Response:**
 ```json
 {
-    "submission_id": "507f1f77bcf86cd799439011",
+    "submission_id": "68877865e63d6bd72cdda440",
     "status": "completed",
     "progress": 1.0,
-    "pose_data_url": "s3://pose-data/507f1f77bcf86cd799439011/pose_data.json",
+    "pose_data_url": "s3://pose-data/68877865e63d6bd72cdda440/pose_data.json",
     "score_breakdown": {
-        "balance": 25,
-        "rhythm": 30,
-        "smoothness": 24,
-        "creativity": 8
+        "balance": 20,
+        "rhythm": 25,
+        "smoothness": 22,
+        "creativity": 18
     },
-    "total_score": 87,
-    "feedback": "Excellent balance control! Your center of mass was very stable. Great rhythm and timing! Your movements were very consistent. Very smooth movements! Your transitions were fluid. Experiment with more creative and varied movements.",
-    "error_message": null,
-    "created_at": "2025-01-28T15:40:35.729153",
-    "completed_at": "2025-01-28T15:42:31.356644"
+    "total_score": 85,
+    "feedback": "Excellent performance! Your balance and rhythm were particularly strong...",
+    "created_at": "2025-01-25T10:00:00Z",
+    "completed_at": "2025-01-25T10:05:00Z"
 }
 ```
-
-**Real Analysis Features:**
-- **MediaPipe Integration**: Real pose detection using MediaPipe
-- **Frame-by-Frame Analysis**: Processes each video frame (30-60 FPS)
-- **33 Pose Landmarks**: Tracks 33 body keypoints per frame
-- **Confidence Scoring**: Calculates pose detection confidence
-- **Real-Time Processing**: Live progress updates during analysis
-- **Fallback Support**: Graceful fallback to mock data if analysis fails
-
-**Scoring Algorithm Details:**
-- **Balance (0-25)**: Analyzes center of mass stability and position variance
-- **Rhythm (0-30)**: Measures movement consistency and timing patterns
-- **Smoothness (0-25)**: Evaluates movement fluidity and transition quality
-- **Creativity (0-20)**: Assesses movement variety and complexity
 
 ### **GET /api/ai/analysis-status/{submission_id}**
 **Description:** Get current analysis status for a submission  
@@ -829,28 +343,12 @@ Authorization: Bearer <access_token>
 **Response:**
 ```json
 {
-    "submission_id": "507f1f77bcf86cd799439011",
-    "status": "completed",
-    "progress": 1.0,
-    "pose_data_url": "s3://pose-data/507f1f77bcf86cd799439011/pose_data.json",
-    "score_breakdown": {
-        "balance": 25,
-        "rhythm": 30,
-        "smoothness": 24,
-        "creativity": 8
-    },
-    "total_score": 87,
-    "feedback": "Excellent balance control! Your center of mass was very stable. Great rhythm and timing! Your movements were very consistent. Very smooth movements! Your transitions were fluid. Experiment with more creative and varied movements.",
-    "error_message": null,
-    "created_at": "2025-01-28T15:40:35.729153",
-    "completed_at": "2025-01-28T15:42:31.356644"
+    "submission_id": "68877865e63d6bd72cdda440",
+    "status": "processing",
+    "progress": 0.75,
+    "created_at": "2025-01-25T10:00:00Z"
 }
 ```
-
-**Status Values:**
-- `processing`: Analysis is currently running
-- `completed`: Analysis finished successfully
-- `failed`: Analysis encountered an error
 
 ### **POST /api/ai/score-submission**
 **Description:** Manually trigger scoring for a submission  
@@ -859,203 +357,127 @@ Authorization: Bearer <access_token>
 **Request Body:**
 ```json
 {
-    "submission_id": "507f1f77bcf86cd799439011"
+    "submission_id": "68877865e63d6bd72cdda440"
 }
 ```
 
 **Response:**
 ```json
 {
-    "submission_id": "507f1f77bcf86cd799439011",
+    "submission_id": "68877865e63d6bd72cdda440",
     "status": "scored",
     "score_breakdown": {
-        "balance": 25,
-        "rhythm": 30,
-        "smoothness": 24,
-        "creativity": 8
+        "balance": 20,
+        "rhythm": 25,
+        "smoothness": 22,
+        "creativity": 18
     },
-    "total_score": 87,
-    "feedback": "Excellent balance control! Your center of mass was very stable. Great rhythm and timing! Your movements were very consistent. Very smooth movements! Your transitions were fluid. Experiment with more creative and varied movements."
-}
-```
-
-### **GET /ai/health**
-**Description:** Health check for AI service  
-**Authentication:** Not required  
-
-**Response:**
-```json
-{
-    "status": "healthy",
-    "service": "ai_pose_analysis",
-    "active_analyses": 0,
-    "version": "1.0.0",
-    "features": {
-        "mediapipe_integration": true,
-        "real_video_analysis": true,
-        "pose_detection": true,
-        "scoring_algorithms": true
-    }
+    "total_score": 85,
+    "feedback": "Excellent performance! Your balance and rhythm were particularly strong..."
 }
 ```
 
 ---
 
-## 🎬 Real Video Analysis Features
+## 🎯 Real Video Analysis Features
 
-### **Technical Specifications:**
-- **Framework**: MediaPipe Pose Detection
-- **Processing**: Frame-by-frame analysis (30-60 FPS)
-- **Landmarks**: 33 body keypoints per frame
-- **Confidence**: Pose detection confidence scoring
-- **Fallback**: Graceful fallback to mock data if analysis fails
+### **Enhanced Pose Detection**
+- **MediaPipe Integration**: Real-time pose estimation using MediaPipe
+- **Multi-frame Analysis**: Processes video at 15 FPS for accuracy
+- **Joint Tracking**: Tracks 33 body landmarks with confidence scores
+- **Movement Segmentation**: Uses ruptures library for change-point detection
 
-### **Performance Metrics:**
-- **Processing Time**: 1-3 minutes for typical dance videos
-- **Frame Rate**: Supports 30-60 FPS videos
-- **Success Rate**: 97% pose detection success rate
-- **Memory Usage**: Optimized for large video files
-- **Error Handling**: Robust error recovery and logging
+### **Movement Analysis**
+- **Joint Angles**: Calculates angles between connected joints
+- **Velocity Analysis**: Tracks movement speed and acceleration
+- **Pattern Recognition**: Identifies movement patterns and transitions
+- **Quality Metrics**: Smoothness, stability, precision, energy, balance
 
-### **Scoring Algorithm Details:**
+### **Rhythm Analysis**
+- **BPM Detection**: Uses librosa for audio tempo analysis
+- **Beat Synchronization**: Aligns movements with musical beats
+- **Rhythm Consistency**: Measures timing accuracy and consistency
 
-#### **Balance Score (0-25 points)**
-- Analyzes center of mass stability
-- Calculates position variance over time
-- Evaluates body alignment and posture
-- Higher scores for consistent positioning
-
-#### **Rhythm Score (0-30 points)**
-- Measures movement consistency
-- Analyzes timing patterns
-- Evaluates movement frequency
-- Higher scores for regular, consistent movements
-
-#### **Smoothness Score (0-25 points)**
-- Evaluates movement fluidity
-- Analyzes transition quality
-- Measures movement linearity
-- Higher scores for smooth, connected movements
-
-#### **Creativity Score (0-20 points)**
-- Assesses movement variety
-- Analyzes movement complexity
-- Evaluates unique movement patterns
-- Higher scores for diverse, creative movements
-
-### **Video Requirements:**
-- **Format**: MP4, AVI, MOV supported
-- **Resolution**: 720p or higher recommended
-- **Duration**: 10 seconds to 5 minutes
-- **File Size**: Up to 500MB
-- **Lighting**: Good lighting for better pose detection
-
-### **Testing Real Video Analysis:**
-Use the provided test script to validate video analysis:
-```bash
-# Test with real dance video
-python test_real_video_analysis.py
-
-# Expected output:
-# ✅ Video analysis completed successfully!
-# ⏱️ Processing time: 115.72 seconds
-# 📊 Analysis Results:
-#    - Total Score: 87/100
-#    - Balance: 25/25
-#    - Rhythm: 30/30
-#    - Smoothness: 24/25
-#    - Creativity: 8/20
-```
+### **Scoring System**
+- **Balance (0-25)**: Posture and stability assessment
+- **Rhythm (0-30)**: Musical timing and beat synchronization
+- **Smoothness (0-25)**: Movement fluidity and transitions
+- **Creativity (0-20)**: Artistic expression and originality
 
 ---
 
-## ⚙️ Background Jobs
+## 🔄 Background Jobs
 
-### **POST /api/admin/jobs/rotate-challenges**
-**Description:** Manually trigger challenge rotation (Admin only)  
-**Authentication:** Required  
-
-**Response:**
-```json
-{
-    "message": "Challenge rotation completed successfully",
-    "details": {
-        "success": true,
-        "expired_deactivated": 3,
-        "new_activated": 1,
-        "statistics_updated": 5,
-        "timestamp": "2025-01-28T15:30:00Z"
-    }
-}
-```
-
-### **POST /api/admin/jobs/cleanup-data**
-**Description:** Manually trigger data cleanup (Admin only)  
-**Authentication:** Required  
-
-**Response:**
-```json
-{
-    "message": "Data cleanup completed successfully",
-    "details": {
-        "success": true,
-        "old_submissions_deleted": 50,
-        "inactive_challenges_deleted": 10,
-        "timestamp": "2025-01-28T15:30:00Z"
-    }
-}
-```
-
-### **GET /api/admin/jobs/status**
-**Description:** Get background job status (Admin only)  
-**Authentication:** Required  
-
-**Response:**
-```json
-{
-    "last_challenge_rotation": "2025-01-28T06:00:00Z",
-    "last_data_cleanup": "2025-01-28T02:00:00Z",
-    "active_analyses": 5,
-    "system_health": "healthy"
-}
-```
-
----
-
-## 📁 S3 File Management
-
-### **POST /api/s3/presigned-url**
-**Description:** Get presigned URL for file upload  
+### **POST /api/background/jobs/pose-analysis**
+**Description:** Queue pose analysis job  
 **Authentication:** Required  
 
 **Request Body:**
 ```json
 {
-    "fileKey": "sessions/user_123/session_456/video.mp4",
-    "contentType": "video/mp4",
-    "fileSize": 10485760
+    "submission_id": "68877865e63d6bd72cdda440",
+    "video_url": "https://example.com/video.mp4"
 }
 ```
 
 **Response:**
 ```json
 {
-    "uploadUrl": "https://s3.amazonaws.com/...",
-    "fileKey": "sessions/user_123/session_456/video.mp4",
-    "expiresIn": 3600
+    "job_id": "job_123456",
+    "status": "queued",
+    "estimated_duration": 300
 }
 ```
 
-### **GET /api/s3/download-url/{file_key}**
-**Description:** Get presigned download URL  
+### **GET /api/background/jobs/{job_id}**
+**Description:** Get job status  
 **Authentication:** Required  
 
 **Response:**
 ```json
 {
-    "downloadUrl": "https://s3.amazonaws.com/...",
-    "fileKey": "sessions/user_123/session_456/video.mp4",
-    "expiresIn": 3600
+    "job_id": "job_123456",
+    "status": "processing",
+    "progress": 0.75,
+    "estimated_completion": "2025-01-25T10:05:00Z"
+}
+```
+
+---
+
+## ☁️ S3 File Management
+
+### **POST /api/s3/upload**
+**Description:** Upload file to S3  
+**Authentication:** Required  
+
+**Request Body:**
+```json
+{
+    "file": "binary_data",
+    "filename": "dance_video.mp4",
+    "content_type": "video/mp4"
+}
+```
+
+**Response:**
+```json
+{
+    "file_url": "https://s3.amazonaws.com/bucket/filename.mp4",
+    "file_key": "uploads/user_id/filename.mp4",
+    "size": 1024000
+}
+```
+
+### **DELETE /api/s3/delete/{file_key}**
+**Description:** Delete file from S3  
+**Authentication:** Required  
+
+**Response:**
+```json
+{
+    "message": "File deleted successfully",
+    "file_key": "uploads/user_id/filename.mp4"
 }
 ```
 
@@ -1064,55 +486,40 @@ python test_real_video_analysis.py
 ## 📰 Feed System
 
 ### **GET /api/feed**
-**Description:** Get user's personalized feed  
+**Description:** Get user feed  
 **Authentication:** Required  
 
 **Query Parameters:**
-- `page` (optional): Page number (default: 1)
-- `limit` (optional): Items per page (default: 20)
+- `page` (int): Page number (default: 1)
+- `limit` (int): Items per page (default: 20)
+- `type` (string): Filter by content type
 
 **Response:**
 ```json
 {
-    "feed": [
+    "items": [
         {
-            "type": "session",
-            "id": "sess_456",
-            "userId": "user_123",
-            "userProfile": {
-                "displayName": "DanceQueen",
+            "id": "feed_item_123",
+            "type": "submission",
+            "user": {
+                "id": "68877865e63d6bd72cdda440",
+                "displayName": "Dance Master",
                 "avatarUrl": "https://example.com/avatar.jpg"
             },
-            "title": "Morning Dance Session",
-            "danceStyle": "hip-hop",
-            "duration": 180,
-            "videoUrl": "https://s3.amazonaws.com/...",
-            "thumbnailUrl": "https://s3.amazonaws.com/...",
-            "likes": 25,
-            "comments": 5,
-            "createdAt": "2025-01-28T10:00:00Z"
-        },
-        {
-            "type": "challenge_submission",
-            "id": "sub_789",
-            "userId": "user_456",
-            "userProfile": {
-                "displayName": "DanceMaster",
-                "avatarUrl": "https://example.com/avatar2.jpg"
+            "content": {
+                "video_url": "https://example.com/video.mp4",
+                "thumbnail_url": "https://example.com/thumbnail.jpg",
+                "title": "Amazing Freestyle Performance",
+                "score": 85
             },
-            "challengeTitle": "Morning Flow Challenge",
-            "totalScore": 87,
-            "badgeAwarded": "Smooth Operator",
-            "videoUrl": "https://s3.amazonaws.com/...",
-            "likes": 15,
-            "comments": 3,
-            "submittedAt": "2025-01-28T15:30:00Z"
+            "created_at": "2025-01-25T10:00:00Z"
         }
     ],
     "pagination": {
         "page": 1,
-        "totalPages": 10,
-        "totalCount": 200
+        "limit": 20,
+        "total": 150,
+        "pages": 8
     }
 }
 ```
@@ -1121,19 +528,8 @@ python test_real_video_analysis.py
 
 ## 🏥 Health Checks
 
-### **GET /**
-**Description:** API root endpoint  
-**Authentication:** Not required  
-
-**Response:**
-```json
-{
-    "message": "Welcome to iDance API Gateway"
-}
-```
-
 ### **GET /health**
-**Description:** Health check endpoint  
+**Description:** Basic health check  
 **Authentication:** Not required  
 
 **Response:**
@@ -1150,73 +546,52 @@ python test_real_video_analysis.py
 **Response:**
 ```json
 {
-    "status": "healthy",
-    "service": "ai_pose_analysis",
-    "active_analyses": 5,
-    "version": "1.0.0"
+    "status": "ai service ok"
 }
 ```
 
 ---
 
-## 🔧 Error Responses
+## 🔧 Error Handling
 
-### **Standard Error Format:**
+All endpoints return consistent error responses:
+
+**Error Response Format:**
 ```json
 {
     "detail": "Error message description"
 }
 ```
 
-### **Common Status Codes:**
-- `200` - Success
-- `201` - Created
-- `400` - Bad Request
-- `401` - Unauthorized
-- `403` - Forbidden
-- `404` - Not Found
-- `422` - Validation Error
-- `500` - Internal Server Error
-
-### **Validation Error Example:**
-```json
-{
-    "detail": [
-        {
-            "type": "missing",
-            "loc": ["body", "email"],
-            "msg": "Field required",
-            "input": null
-        }
-    ]
-}
-```
+**Common Status Codes:**
+- `400` - Bad Request (invalid input)
+- `401` - Unauthorized (missing/invalid token)
+- `403` - Forbidden (insufficient permissions)
+- `404` - Not Found (resource doesn't exist)
+- `422` - Validation Error (invalid request body)
+- `500` - Internal Server Error (server-side error)
 
 ---
 
 ## 📝 Notes
 
-### **Authentication:**
-- All protected endpoints require a valid JWT token in the `Authorization` header
-- Token format: `Bearer <access_token>`
+### **Authentication**
+- All protected endpoints require a valid JWT token
+- Include token in Authorization header: `Bearer <token>`
 - Tokens expire after 24 hours
 
-### **Rate Limiting:**
-- Standard endpoints: 100 requests per minute
-- File upload endpoints: 10 requests per minute
-- AI analysis endpoints: 5 requests per minute
+### **Rate Limiting**
+- API calls are limited to 100 requests per minute per user
+- Background jobs have separate rate limits
 
-### **File Upload:**
-- Maximum video file size: 100MB
+### **File Uploads**
+- Maximum file size: 100MB for videos
 - Supported formats: MP4, MOV, AVI
-- Thumbnails: JPEG, PNG (max 5MB)
+- Files are automatically processed and optimized
 
-### **Pagination:**
-- Default page size: 20 items
-- Maximum page size: 100 items
-- Page numbers start from 1
-
----
-
-**Last Updated:** July 28, 2025
-**Next Update:** When new APIs are added 
+### **Dance Breakdown Features**
+- Supports YouTube and Instagram video URLs
+- Automatic BPM detection from audio
+- Step-by-step movement analysis
+- OpenAI-powered step descriptions
+- Manual and automatic processing modes 
