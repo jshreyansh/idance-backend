@@ -37,7 +37,7 @@ joblib==1.5.1
 kiwisolver==1.4.7
 lazy_loader==0.4
 librosa==0.10.1
-llvmlite==0.44.0
+llvmlite==0.43.0
 matplotlib==3.7.2
 mediapipe==0.10.14
 ml_dtypes==0.5.1
