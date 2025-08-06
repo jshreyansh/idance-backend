@@ -876,6 +876,52 @@ class DanceBreakdownService:
             logger.info(f"🎬 Starting dance breakdown for URL: {request.video_url}")
             logger.info(f"🎬 Mode: {request.mode}")
             
+            # Check if breakdown already exists for this video URL
+            db = self._get_db()
+            existing_breakdown = await db['dance_breakdowns'].find_one({
+                "videoUrl": request.video_url,
+                "success": True
+            })
+            
+            if existing_breakdown:
+                logger.info(f"✅ Found existing breakdown for URL: {request.video_url}")
+                
+                # Convert existing breakdown to response format
+                dance_steps = []
+                for step_data in existing_breakdown.get('steps', []):
+                    dance_step = DanceStep(
+                        step_number=step_data.get('stepNumber', 0),
+                        start_timestamp=step_data.get('startTimestamp', ''),
+                        end_timestamp=step_data.get('endTimestamp', ''),
+                        step_name=step_data.get('stepName', ''),
+                        global_description=step_data.get('global_description', ''),
+                        description=step_data.get('description', ''),
+                        style_and_history=step_data.get('styleAndHistory', ''),
+                        spice_it_up=step_data.get('spiceItUp', '')
+                    )
+                    dance_steps.append(dance_step)
+                
+                # Create response from existing data
+                response = DanceBreakdownResponse(
+                    success=True,
+                    video_url=existing_breakdown.get('videoUrl', request.video_url),
+                    playable_video_url=existing_breakdown.get('playableVideoUrl'),
+                    title=existing_breakdown.get('title', 'Dance Video Analysis'),
+                    duration=existing_breakdown.get('duration', 30.0),
+                    bpm=existing_breakdown.get('bpm'),
+                    difficulty_level=existing_breakdown.get('difficultyLevel', 'Intermediate'),
+                    total_steps=existing_breakdown.get('totalSteps', len(dance_steps)),
+                    routine_analysis=existing_breakdown.get('routineAnalysis', {}),
+                    steps=dance_steps,
+                    outline_url=existing_breakdown.get('outlineUrl', ''),
+                    mode=existing_breakdown.get('mode', request.mode)
+                )
+                
+                logger.info(f"✅ Returning existing breakdown with {len(dance_steps)} steps")
+                return response
+            
+            logger.info(f"🆕 No existing breakdown found, processing new video: {request.video_url}")
+            
             # Determine cookies file based on URL
             cookies_path = None
             if "instagram.com" in request.video_url:
