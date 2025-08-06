@@ -129,6 +129,7 @@ Authorization: Bearer <access_token>
 {
     "success": true,
     "video_url": "https://www.youtube.com/watch?v=example",
+    "playable_video_url": "https://idanceshreyansh.s3.ap-south-1.amazonaws.com/dance-breakdowns/user123/20250125_143022_abc12345.mp4",
     "title": "Dance Video Analysis",
     "duration": 30.0,
     "bpm": 120.5,
@@ -292,6 +293,45 @@ Authorization: Bearer <access_token>
 - `200` - Success
 - `404` - Breakdown not found or not owned by user
 - `401` - Unauthorized
+
+### **GET /api/ai/dance-breakdowns/videos**
+**Description:** Get all breakdown videos for the input screen  
+**Authentication:** Required  
+
+**Parameters:**
+- `page` (query): Page number (default: 1)
+- `limit` (query): Items per page (default: 20)
+
+**Response:**
+```json
+{
+    "breakdowns": [
+        {
+            "id": "68936a1f93b74bc4f0112219",
+            "videoUrl": "https://www.youtube.com/watch?v=example",
+            "playableVideoUrl": "https://idanceshreyansh.s3.ap-south-1.amazonaws.com/dance-breakdowns/user123/20250125_143022_abc12345.mp4",
+            "thumbnailUrl": "https://idanceshreyansh.s3.ap-south-1.amazonaws.com/dance-breakdowns/user123/20250125_143022_abc12345_thumb.jpg",
+            "title": "Hip Hop Dance Breakdown",
+            "duration": 180.5,
+            "durationFormatted": "3:00",
+            "bpm": 120.5,
+            "difficultyLevel": "Intermediate",
+            "totalSteps": 8,
+            "success": true,
+            "createdAt": "2025-01-25T14:30:22Z",
+            "userProfile": {
+                "displayName": "Dance Master",
+                "avatarUrl": "https://example.com/avatar.jpg",
+                "level": 5
+            }
+        }
+    ],
+    "total": 25,
+    "page": 1,
+    "limit": 20,
+    "hasMore": true
+}
+```
 
 ---
 
@@ -596,6 +636,36 @@ All endpoints return consistent error responses:
 - OpenAI-powered step descriptions
 - Manual and automatic processing modes 
 
+### **POST /api/challenges**
+**Description:** Create a new challenge (admin only)  
+**Authentication:** Required  
+
+**Request Body:**
+```json
+{
+    "title": "Freestyle Friday",
+    "description": "Show your freestyle moves!",
+    "type": "freestyle",
+    "difficulty": "intermediate",
+    "startTime": "2025-01-25T00:00:00Z",
+    "endTime": "2025-01-26T23:59:59Z",
+    "demoVideoURL": "https://example.com/demo.mp4",
+    "points": 100,
+    "badgeName": "Freestyle Master",
+    "badgeIconURL": "https://example.com/badge.png",
+    "categories": ["hip hop", "trendy"],
+    "tags": ["freestyle", "challenge"]
+}
+```
+
+**Response:**
+```json
+{
+    "message": "Challenge created successfully",
+    "challenge_id": "688b8ef5643bcb1dffaa85f7"
+}
+```
+
 ### **GET /api/challenges/{challenge_id}/leaderboard**
 **Description:** Get leaderboard for a specific challenge  
 **Authentication:** Required  
@@ -714,3 +784,134 @@ Authorization: Bearer <access_token>
 - `200` - Success
 - `404` - Challenge not found
 - `401` - Unauthorized 
+
+### **GET /api/challenges/categories**
+**Description:** Get all available challenge categories  
+**Authentication:** Required  
+
+**Response:**
+```json
+[
+    "hip hop",
+    "ballet",
+    "trendy",
+    "party",
+    "sexy",
+    "contemporary",
+    "jazz",
+    "street",
+    "latin",
+    "afro",
+    "bollywood",
+    "k-pop",
+    "freestyle",
+    "choreography"
+]
+```
+
+### **GET /api/challenges/category/{category}**
+**Description:** Get challenges by specific category  
+**Authentication:** Required  
+
+**Parameters:**
+- `category` (path): Category name (e.g., "hip hop", "trendy")
+- `page` (query): Page number (default: 1)
+- `limit` (query): Items per page (default: 20)
+- `active_only` (query): Show only active challenges (default: true)
+
+**Response:**
+```json
+{
+    "challenges": [
+        {
+            "id": "688b8ef5643bcb1dffaa85f7",
+            "title": "Freestyle Friday",
+            "description": "Show your freestyle moves!",
+            "type": "freestyle",
+            "difficulty": "intermediate",
+            "categories": ["hip hop", "trendy"],
+            "tags": ["freestyle", "challenge"],
+            "points": 100,
+            "badgeName": "Freestyle Master",
+            "badgeIconURL": "https://example.com/badge.png",
+            "isActive": true,
+            "totalSubmissions": 25,
+            "participantCount": 25
+        }
+    ],
+    "total": 1,
+    "page": 1,
+    "limit": 20
+}
+``` 
+
+### **GET /api/activities/me**
+**Description:** Get all user activities (sessions, challenges, breakdowns) unified  
+**Authentication:** Required  
+
+**Parameters:**
+- `page` (query): Page number (default: 1)
+- `limit` (query): Items per page (default: 20)
+- `activity_type` (query): Filter by activity type - 'sessions', 'challenges', 'breakdowns', or None for all (default: None)
+
+**Response:**
+```json
+{
+    "activities": [
+        {
+            "_id": "6893835c1ef74973896e2bf3",
+            "activityType": "challenge",
+            "activityDate": "2025-08-06T16:31:23.000Z",
+            "title": "Challenge Submission",
+            "description": "5 minutes • 45 calories",
+            "videoUrl": "https://idanceshreyansh.s3.ap-south-1.amazonaws.com/...",
+            "durationMinutes": 5,
+            "caloriesBurned": 45,
+            "score": 85,
+            "isPublic": true
+        },
+        {
+            "_id": "6893823c1515c715f0ae3f96",
+            "activityType": "breakdown",
+            "activityDate": "2025-08-06T16:26:36.000Z",
+            "title": "Dance Breakdown",
+            "description": "5 steps • Intermediate",
+            "videoUrl": "https://www.youtube.com/shorts/4ybhF5fK2bo",
+            "duration": 30.0,
+            "totalSteps": 5,
+            "difficultyLevel": "Intermediate",
+            "success": true
+        },
+        {
+            "_id": "68937e749523ddad93840789",
+            "activityType": "session",
+            "activityDate": "2025-08-06T16:10:28.000Z",
+            "title": "Hip Hop Session",
+            "description": "15 minutes • 120 calories",
+            "startTime": "2025-08-06T16:10:28.000Z",
+            "endTime": "2025-08-06T16:25:28.000Z",
+            "style": "hip hop",
+            "sessionType": "freestyle",
+            "durationMinutes": 15,
+            "caloriesBurned": 120,
+            "isPublic": true,
+            "videoThumbnailUrl": "https://...",
+            "likesCount": 5,
+            "commentsCount": 2,
+            "status": "completed"
+        }
+    ],
+    "total": 3,
+    "page": 1,
+    "limit": 20,
+    "hasMore": false,
+    "counts": {
+        "sessions": 8,
+        "challenges": 5,
+        "breakdowns": 7,
+        "total": 20
+    }
+}
+```
+
+### **GET /api/sessions/me** 

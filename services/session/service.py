@@ -209,6 +209,125 @@ async def update_user_stats_from_session(db, user_id, session_data):
             upsert=True
         )
 
+@session_router.get('/api/activities/me')
+async def get_my_activities(
+    user_id: str = Depends(get_current_user_id),
+    page: int = 1,
+    limit: int = 20,
+    activity_type: str = None  # 'sessions', 'challenges', 'breakdowns', or None for all
+):
+    """
+    Get all user activities (sessions, challenges, breakdowns) unified
+    """
+    try:
+        db = Database.get_database()
+        skip = (page - 1) * limit
+        
+        activities = []
+        
+        # Get sessions
+        if activity_type is None or activity_type == 'sessions':
+            sessions = await db['dance_sessions'].find(
+                {"userId": ObjectId(user_id)},
+                {
+                    "startTime": 1,
+                    "endTime": 1,
+                    "style": 1,
+                    "sessionType": 1,
+                    "durationMinutes": 1,
+                    "caloriesBurned": 1,
+                    "isPublic": 1,
+                    "videoThumbnailUrl": 1,
+                    "likesCount": 1,
+                    "commentsCount": 1,
+                    "status": 1
+                }
+            ).sort("startTime", -1).skip(skip).limit(limit).to_list(length=limit)
+            
+            for session in sessions:
+                session['_id'] = str(session['_id'])
+                session['activityType'] = 'session'
+                session['activityDate'] = session['startTime']
+                session['title'] = f"{session.get('style', 'Dance')} Session"
+                session['description'] = f"{session.get('durationMinutes', 0)} minutes • {session.get('caloriesBurned', 0)} calories"
+                activities.append(session)
+        
+        # Get challenge submissions
+        if activity_type is None or activity_type == 'challenges':
+            challenges = await db['challenge_submissions'].find(
+                {"userId": ObjectId(user_id)},
+                {
+                    "challengeId": 1,
+                    "videoUrl": 1,
+                    "durationMinutes": 1,
+                    "caloriesBurned": 1,
+                    "score": 1,
+                    "timestamps.submittedAt": 1,
+                    "isPublic": 1
+                }
+            ).sort("timestamps.submittedAt", -1).skip(skip).limit(limit).to_list(length=limit)
+            
+            for challenge in challenges:
+                challenge['_id'] = str(challenge['_id'])
+                challenge['activityType'] = 'challenge'
+                challenge['activityDate'] = challenge.get('timestamps', {}).get('submittedAt')
+                challenge['title'] = "Challenge Submission"
+                challenge['description'] = f"{challenge.get('durationMinutes', 0)} minutes • {challenge.get('caloriesBurned', 0)} calories"
+                activities.append(challenge)
+        
+        # Get dance breakdowns
+        if activity_type is None or activity_type == 'breakdowns':
+            breakdowns = await db['dance_breakdowns'].find(
+                {"userId": ObjectId(user_id)},
+                {
+                    "videoUrl": 1,
+                    "title": 1,
+                    "duration": 1,
+                    "totalSteps": 1,
+                    "difficultyLevel": 1,
+                    "createdAt": 1,
+                    "success": 1
+                }
+            ).sort("createdAt", -1).skip(skip).limit(limit).to_list(length=limit)
+            
+            for breakdown in breakdowns:
+                breakdown['_id'] = str(breakdown['_id'])
+                breakdown['activityType'] = 'breakdown'
+                breakdown['activityDate'] = breakdown['createdAt']
+                breakdown['title'] = breakdown.get('title', 'Dance Breakdown')
+                breakdown['description'] = f"{breakdown.get('totalSteps', 0)} steps • {breakdown.get('difficultyLevel', 'Intermediate')}"
+                activities.append(breakdown)
+        
+        # Sort all activities by date (most recent first)
+        activities.sort(key=lambda x: x['activityDate'], reverse=True)
+        
+        # Apply pagination to combined results
+        start_idx = skip
+        end_idx = start_idx + limit
+        paginated_activities = activities[start_idx:end_idx]
+        
+        # Get total counts for each type
+        total_sessions = await db['dance_sessions'].count_documents({"userId": ObjectId(user_id)})
+        total_challenges = await db['challenge_submissions'].count_documents({"userId": ObjectId(user_id)})
+        total_breakdowns = await db['dance_breakdowns'].count_documents({"userId": ObjectId(user_id)})
+        
+        return {
+            "activities": paginated_activities,
+            "total": len(activities),
+            "page": page,
+            "limit": limit,
+            "hasMore": end_idx < len(activities),
+            "counts": {
+                "sessions": total_sessions,
+                "challenges": total_challenges,
+                "breakdowns": total_breakdowns,
+                "total": total_sessions + total_challenges + total_breakdowns
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get activities: {str(e)}")
+
 @session_router.get('/api/sessions/me')
 async def get_my_sessions(user_id: str = Depends(get_current_user_id)):
     db = Database.get_database()
