@@ -595,3 +595,122 @@ All endpoints return consistent error responses:
 - Step-by-step movement analysis
 - OpenAI-powered step descriptions
 - Manual and automatic processing modes 
+
+### **GET /api/challenges/{challenge_id}/leaderboard**
+**Description:** Get leaderboard for a specific challenge  
+**Authentication:** Required  
+
+**Parameters:**
+- `challenge_id` (path): Challenge ID
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+    "challengeId": "68885e917dcfd112158b2a10",
+    "challengeTitle": "Freestyle Friday",
+    "entries": [
+        {
+            "rank": 1,
+            "userId": "68877865e63d6bd72cdda440",
+            "userProfile": {
+                "displayName": "Dance Master",
+                "avatarUrl": "https://example.com/avatar.jpg",
+                "level": 5
+            },
+            "score": 95,
+            "scoreBreakdown": {
+                "balance": 25,
+                "rhythm": 30,
+                "smoothness": 25,
+                "creativity": 15
+            },
+            "submittedAt": "2025-01-25T10:00:00Z",
+            "submissionId": "68885e917dcfd112158b2a11"
+        }
+    ],
+    "total": 25,
+    "userRank": 3
+}
+```
+
+### **GET /api/challenges/{challenge_id}/public-submissions**
+**Description:** Get public submissions for a specific challenge with video URLs  
+**Authentication:** Required  
+
+**Parameters:**
+- `challenge_id` (path): Challenge ID
+- `page` (query): Page number (default: 1)
+- `limit` (query): Items per page (default: 20)
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+    "challengeId": "68885e917dcfd112158b2a10",
+    "challengeTitle": "Freestyle Friday",
+    "submissions": [
+        {
+            "id": "68885e917dcfd112158b2a11",
+            "userId": "68877865e63d6bd72cdda440",
+            "userProfile": {
+                "displayName": "Dance Master",
+                "avatarUrl": "https://example.com/avatar.jpg",
+                "level": 5
+            },
+            "video": {
+                "url": "https://idanceshreyansh.s3.ap-south-1.amazonaws.com/challenges/user123/challenge456/20250128_153000_abc12345.mp4",
+                "file_key": "challenges/user123/challenge456/20250128_153000_abc12345.mp4",
+                "duration": 120,
+                "size_mb": 25.5
+            },
+            "analysis": {
+                "status": "completed",
+                "score": 95,
+                "breakdown": {
+                    "balance": 25,
+                    "rhythm": 30,
+                    "smoothness": 25,
+                    "creativity": 15
+                },
+                "feedback": "Great rhythm and balance!",
+                "confidence": 0.92
+            },
+            "metadata": {
+                "caption": "My freestyle challenge attempt!",
+                "tags": ["freestyle", "challenge"],
+                "location": "Mumbai, India",
+                "isPublic": true,
+                "sharedToFeed": true,
+                "highlightText": "Check out my moves!"
+            },
+            "submittedAt": "2025-01-25T10:00:00Z",
+            "likes": ["user1", "user2"],
+            "comments": [
+                {
+                    "userId": "user1",
+                    "text": "Amazing moves!",
+                    "timestamp": "2025-01-25T10:30:00Z"
+                }
+            ],
+            "shares": 5
+        }
+    ],
+    "total": 25,
+    "page": 1,
+    "limit": 20
+}
+```
+
+**Status Codes:**
+- `200` - Success
+- `404` - Challenge not found
+- `401` - Unauthorized 

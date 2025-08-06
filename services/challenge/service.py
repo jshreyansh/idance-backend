@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from services.challenge.models import (
     Challenge, ChallengeCreate, ChallengeResponse, ChallengeListResponse, 
     TodayChallengeResponse, ChallengeCriteria, ChallengeSearchRequest,
-    ChallengeLeaderboardResponse, ChallengeLeaderboardEntry
+    ChallengeLeaderboardResponse, ChallengeLeaderboardEntry, PublicChallengeSubmissionsResponse, PublicSubmissionEntry
 )
 from services.user.service import get_current_user_id
 from infra.mongo import Database
@@ -522,6 +522,87 @@ class ChallengeService:
             logger.error(f"❌ Error getting challenge stats: {e}")
             raise HTTPException(status_code=500, detail="Failed to get challenge statistics")
 
+    async def get_public_challenge_submissions(self, challenge_id: str, page: int = 1, limit: int = 20) -> PublicChallengeSubmissionsResponse:
+        """Get public submissions for a specific challenge with video URLs"""
+        try:
+            # Validate challenge exists
+            challenge = await self._get_db()['challenges'].find_one({
+                "_id": ObjectId(challenge_id)
+            })
+            
+            if not challenge:
+                raise HTTPException(status_code=404, detail="Challenge not found")
+            
+            # Calculate skip for pagination
+            skip = (page - 1) * limit
+            
+            # Get public submissions for this challenge
+            submissions_cursor = self._get_db()['challenge_submissions'].find({
+                "challengeId": challenge_id,
+                "metadata.isPublic": True
+            }).sort("timestamps.submittedAt", -1).skip(skip).limit(limit)
+            
+            submissions = await submissions_cursor.to_list(length=limit)
+            
+            # Get total count
+            total = await self._get_db()['challenge_submissions'].count_documents({
+                "challengeId": challenge_id,
+                "metadata.isPublic": True
+            })
+            
+            # Convert to response models
+            submission_entries = []
+            for submission in submissions:
+                # Get user profile
+                user = await self._get_db()['users'].find_one({
+                    "_id": ObjectId(submission['userId'])
+                })
+                
+                user_profile = {
+                    "displayName": user.get("profile", {}).get("displayName", "Unknown"),
+                    "avatarUrl": user.get("profile", {}).get("avatarUrl"),
+                    "level": user.get("stats", {}).get("level", 1)
+                } if user else {
+                    "displayName": "Unknown",
+                    "avatarUrl": None,
+                    "level": 1
+                }
+                
+                # Get submittedAt from timestamps
+                submitted_at = submission.get('timestamps', {}).get('submittedAt')
+                if not submitted_at:
+                    # Fallback to direct field if timestamps structure doesn't exist
+                    submitted_at = submission.get('submittedAt')
+                
+                # Create submission entry
+                submission_entry = PublicSubmissionEntry(
+                    _id=str(submission['_id']),
+                    userId=str(submission['userId']),
+                    userProfile=user_profile,
+                    video=submission['video'],
+                    analysis=submission['analysis'],
+                    metadata=submission['metadata'],
+                    submittedAt=submitted_at,
+                    likes=submission.get('likes', []),
+                    comments=submission.get('comments', []),
+                    shares=submission.get('shares', 0)
+                )
+                submission_entries.append(submission_entry)
+            
+            return PublicChallengeSubmissionsResponse(
+                challengeId=challenge_id,
+                challengeTitle=challenge['title'],
+                submissions=submission_entries,
+                total=total,
+                page=page,
+                limit=limit
+            )
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to get public submissions: {str(e)}")
+
 # Global service instance
 challenge_service = ChallengeService()
 
@@ -618,4 +699,14 @@ async def get_challenge_leaderboard(
     user_id: str = Depends(get_current_user_id)
 ):
     """Get leaderboard for a specific challenge"""
-    return await challenge_service.get_challenge_leaderboard(challenge_id, user_id) 
+    return await challenge_service.get_challenge_leaderboard(challenge_id, user_id)
+
+@challenge_router.get('/api/challenges/{challenge_id}/public-submissions', response_model=PublicChallengeSubmissionsResponse)
+async def get_public_challenge_submissions(
+    challenge_id: str,
+    page: int = 1,
+    limit: int = 20,
+    user_id: str = Depends(get_current_user_id)
+):
+    """Get public submissions for a specific challenge with video URLs"""
+    return await challenge_service.get_public_challenge_submissions(challenge_id, page, limit) 

@@ -145,6 +145,7 @@ class UnifiedSubmissionRequest(BaseModel):
     """Unified request model for challenge submissions"""
     video_file: str = Field(..., description="Base64 encoded video or file upload")
     metadata: SubmissionMetadata
+    video_duration_seconds: Optional[int] = Field(None, description="Video duration in seconds (if known)")
 
 class UnifiedSubmissionResponse(BaseModel):
     """Unified response model for submissions"""
@@ -187,4 +188,26 @@ class ChallengeLeaderboardResponse(BaseModel):
     challengeTitle: str
     entries: List[ChallengeLeaderboardEntry]
     total: int
-    userRank: Optional[int] = None 
+    userRank: Optional[int] = None
+
+class PublicSubmissionEntry(BaseModel):
+    """Public submission entry for challenge submissions"""
+    id: str = Field(..., alias="_id")
+    userId: str
+    userProfile: Dict
+    video: VideoData
+    analysis: AnalysisData
+    metadata: SubmissionMetadata
+    submittedAt: datetime
+    likes: List[str] = []
+    comments: List[Dict] = []
+    shares: int = 0
+
+class PublicChallengeSubmissionsResponse(BaseModel):
+    """Response model for public challenge submissions"""
+    challengeId: str
+    challengeTitle: str
+    submissions: List[PublicSubmissionEntry]
+    total: int
+    page: int
+    limit: int 

@@ -125,7 +125,7 @@ class SubmissionService:
             
             # Process video upload
             video_data = await self._process_video_upload(
-                submission_request.video_file, user_id, challenge_id
+                submission_request.video_file, user_id, challenge_id, submission_request.video_duration_seconds
             )
             
             # Create session first
@@ -135,7 +135,7 @@ class SubmissionService:
                 "startTime": now,
                 "endTime": now,
                 "status": "completed",
-                "durationMinutes": video_data.duration or 0,
+                "durationMinutes": int(video_data.duration / 60) if video_data.duration else 1,  # Convert seconds to minutes
                 "caloriesBurned": 0,
                 "style": "freestyle",
                 "sessionType": "challenge",
@@ -212,6 +212,9 @@ class SubmissionService:
                     "$set": {"updatedAt": now}
                 }
             )
+            
+            # Update user stats for challenge submission
+            await self._update_user_stats_from_challenge(db, user_id, video_data, challenge)
             
             # 🚀 Trigger AI analysis automatically and wait for completion
             analysis_completed = False
@@ -487,21 +490,30 @@ class SubmissionService:
             logger.error(f"❌ Error getting user submissions: {e}")
             raise HTTPException(status_code=500, detail="Failed to get user submissions")
 
-    async def _process_video_upload(self, video_file: str, user_id: str, challenge_id: str) -> VideoData:
+    async def _process_video_upload(self, video_file: str, user_id: str, challenge_id: str, provided_duration: Optional[int] = None) -> VideoData:
         """
         Process video file upload (URL, S3 file key, or base64) and return video data
         """
         import uuid
         
         try:
+            # Use provided duration if available, otherwise extract from video
+            if provided_duration and provided_duration > 0:
+                duration = provided_duration
+            else:
+                duration = None  # Will be extracted from video
+            
             # Check if it's a URL
             if video_file.startswith('http'):
                 # It's a URL, use it directly
                 file_key = f"challenges/{user_id}/{challenge_id}/external_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.mp4"
+                # Extract duration from URL video if not provided
+                if not duration:
+                    duration = await self._extract_video_duration_from_url(video_file)
                 return VideoData(
                     url=video_file,
                     file_key=file_key,
-                    duration=60,  # Default duration
+                    duration=duration,
                     size_mb=25.0  # Default size
                 )
             
@@ -509,10 +521,13 @@ class SubmissionService:
             elif video_file.startswith('challenges/'):
                 # It's an S3 file key, construct the URL
                 file_url = f"https://idanceshreyansh.s3.ap-south-1.amazonaws.com/{video_file}"
+                # Extract duration from S3 video if not provided
+                if not duration:
+                    duration = await self._extract_video_duration_from_url(file_url)
                 return VideoData(
                     url=file_url,
                     file_key=video_file,
-                    duration=60,  # Default duration
+                    duration=duration,
                     size_mb=25.0  # Default size
                 )
             
@@ -534,7 +549,9 @@ class SubmissionService:
                 
                 # Calculate video duration and size (simplified)
                 size_mb = len(video_bytes) / (1024 * 1024)
-                duration = 60  # Default duration, would be calculated from video
+                # Extract duration from video bytes if not provided
+                if not duration:
+                    duration = await self._extract_video_duration_from_bytes(video_bytes)
                 
                 return VideoData(
                     url=file_url,
@@ -546,6 +563,77 @@ class SubmissionService:
         except Exception as e:
             logger.error(f"❌ Error processing video upload: {e}")
             raise HTTPException(status_code=400, detail="Invalid video file")
+
+    async def _extract_video_duration_from_url(self, video_url: str) -> int:
+        """Extract video duration from URL using ffprobe"""
+        try:
+            import subprocess
+            import json
+            
+            # Use ffprobe to get video duration
+            cmd = [
+                'ffprobe', 
+                '-v', 'quiet', 
+                '-print_format', 'json', 
+                '-show_format', 
+                video_url
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0:
+                data = json.loads(result.stdout)
+                duration_seconds = float(data['format']['duration'])
+                return int(duration_seconds)
+            else:
+                logger.warning(f"Failed to extract duration from {video_url}: {result.stderr}")
+                return 60  # Default fallback
+                
+        except Exception as e:
+            logger.warning(f"Error extracting video duration from {video_url}: {e}")
+            return 60  # Default fallback
+
+    async def _extract_video_duration_from_bytes(self, video_bytes: bytes) -> int:
+        """Extract video duration from video bytes using ffprobe"""
+        try:
+            import subprocess
+            import json
+            import tempfile
+            import os
+            
+            # Create temporary file
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
+                temp_file.write(video_bytes)
+                temp_path = temp_file.name
+            
+            try:
+                # Use ffprobe to get video duration
+                cmd = [
+                    'ffprobe', 
+                    '-v', 'quiet', 
+                    '-print_format', 'json', 
+                    '-show_format', 
+                    temp_path
+                ]
+                
+                result = subprocess.run(cmd, capture_output=True, text=True)
+                
+                if result.returncode == 0:
+                    data = json.loads(result.stdout)
+                    duration_seconds = float(data['format']['duration'])
+                    return int(duration_seconds)
+                else:
+                    logger.warning(f"Failed to extract duration from video bytes: {result.stderr}")
+                    return 60  # Default fallback
+                    
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_path):
+                    os.unlink(temp_path)
+                    
+        except Exception as e:
+            logger.warning(f"Error extracting video duration from bytes: {e}")
+            return 60  # Default fallback
 
     async def _run_ai_analysis_sync(self, submission_id: str, session: dict, challenge: dict):
         """Run AI analysis synchronously and return results"""
@@ -577,6 +665,81 @@ class SubmissionService:
         except Exception as e:
             logger.error(f"❌ Error in synchronous AI analysis: {e}")
             return None
+
+    async def _update_user_stats_from_challenge(self, db, user_id: str, video_data: VideoData, challenge: dict):
+        """Updates user stats based on the challenge type and video duration."""
+        try:
+            user = await db['users'].find_one({"_id": ObjectId(user_id)})
+            if not user:
+                logger.warning(f"User {user_id} not found for stats update.")
+                return
+
+            challenge_type = challenge.get("type", "freestyle")
+            duration_seconds = video_data.duration or 0
+            duration_minutes = int(duration_seconds / 60) if duration_seconds > 0 else 1
+
+            # Update challenge-specific stats
+            if challenge_type == "freestyle":
+                # For freestyle, duration is directly related to calories burned
+                calories_burned = int(duration_minutes * 5) # Example: 5 calories per minute
+                await db['user_stats'].update_one(
+                    {"_id": ObjectId(user_id)},
+                    {
+                        "$inc": {
+                            "totalKcal": calories_burned,
+                            "totalTimeMinutes": duration_minutes,
+                            "totalSessions": 1
+                        },
+                        "$set": {
+                            "updatedAt": datetime.utcnow(),
+                            "mostPlayedStyle": "freestyle"
+                        }
+                    },
+                    upsert=True
+                )
+                logger.info(f"✅ Updated user {user_id} stats for freestyle challenge.")
+            elif challenge_type == "static":
+                # For static challenges, less calories but still counts as activity
+                calories_burned = int(duration_minutes * 3) # Example: 3 calories per minute
+                await db['user_stats'].update_one(
+                    {"_id": ObjectId(user_id)},
+                    {
+                        "$inc": {
+                            "totalKcal": calories_burned,
+                            "totalTimeMinutes": duration_minutes,
+                            "totalSessions": 1
+                        },
+                        "$set": {
+                            "updatedAt": datetime.utcnow(),
+                            "mostPlayedStyle": "static"
+                        }
+                    },
+                    upsert=True
+                )
+                logger.info(f"✅ Updated user {user_id} stats for static challenge.")
+            else:
+                # For other challenge types, still count as activity
+                calories_burned = int(duration_minutes * 4) # Example: 4 calories per minute
+                await db['user_stats'].update_one(
+                    {"_id": ObjectId(user_id)},
+                    {
+                        "$inc": {
+                            "totalKcal": calories_burned,
+                            "totalTimeMinutes": duration_minutes,
+                            "totalSessions": 1
+                        },
+                        "$set": {
+                            "updatedAt": datetime.utcnow(),
+                            "mostPlayedStyle": challenge_type
+                        }
+                    },
+                    upsert=True
+                )
+                logger.info(f"✅ Updated user {user_id} stats for {challenge_type} challenge.")
+
+        except Exception as e:
+            logger.error(f"❌ Error updating user stats from challenge: {e}")
+            raise
 
 # Global service instance
 submission_service = SubmissionService()
