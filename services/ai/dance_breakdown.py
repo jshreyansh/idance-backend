@@ -239,7 +239,7 @@ class DanceBreakdownService:
     
     def _get_db(self):
         """Get database connection"""
-        if not self.db:
+        if self.db is None:
             self.db = Database.get_database()
         return self.db
     
