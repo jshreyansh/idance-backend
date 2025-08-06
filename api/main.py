@@ -25,6 +25,11 @@ app.add_middleware(
         "http://127.0.0.1:19006",
         "http://localhost:19000", # Expo CLI default web port
         "http://127.0.0.1:19000",
+        "http://localhost:8080",  # Additional common ports
+        "http://127.0.0.1:8080",
+        "http://localhost:8000",  # Backend port
+        "http://127.0.0.1:8000",
+        "*",  # Allow all origins for development (remove in production)
         # Add production domains when ready
         # "https://yourdomain.com",
         # "https://www.yourdomain.com",
