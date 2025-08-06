@@ -358,7 +358,7 @@ class DanceBreakdownService:
             # Calculate skip
             skip = (page - 1) * limit
             
-            # Get breakdowns with user info
+            # Get unique breakdowns by videoUrl (most recent per video)
             pipeline = [
                 {
                     "$lookup": {
@@ -369,35 +369,51 @@ class DanceBreakdownService:
                     }
                 },
                 {"$unwind": "$user"},
+                # Group by videoUrl to get unique videos (most recent per video)
                 {
-                    "$project": {
-                        "_id": 1,
-                        "videoUrl": 1,
-                        "playableVideoUrl": 1,
-                        "title": 1,
-                        "duration": 1,
-                        "bpm": 1,
-                        "difficultyLevel": 1,
-                        "totalSteps": 1,
-                        "success": 1,
-                        "createdAt": 1,
-                        "userProfile": {
-                            "displayName": "$user.profile.displayName",
-                            "avatarUrl": "$user.profile.avatarUrl",
-                            "level": "$user.stats.level"
-                        }
+                    "$group": {
+                        "_id": "$videoUrl",
+                        "doc": {"$first": "$$ROOT"},
+                        "latestCreatedAt": {"$max": "$createdAt"}
                     }
                 },
-                {"$sort": {"createdAt": -1}},
+                # Sort by the latest creation date
+                {"$sort": {"latestCreatedAt": -1}},
+                # Skip and limit for pagination
                 {"$skip": skip},
-                {"$limit": limit}
+                {"$limit": limit},
+                # Project the final structure
+                {
+                    "$project": {
+                        "_id": "$doc._id",
+                        "videoUrl": "$doc.videoUrl",
+                        "playableVideoUrl": "$doc.playableVideoUrl",
+                        "title": "$doc.title",
+                        "duration": "$doc.duration",
+                        "bpm": "$doc.bpm",
+                        "difficultyLevel": "$doc.difficultyLevel",
+                        "totalSteps": "$doc.totalSteps",
+                        "success": "$doc.success",
+                        "createdAt": "$doc.createdAt",
+                        "userProfile": {
+                            "displayName": "$doc.user.profile.displayName",
+                            "avatarUrl": "$doc.user.profile.avatarUrl",
+                            "level": "$doc.user.stats.level"
+                        }
+                    }
+                }
             ]
             
             breakdowns = await db['dance_breakdowns'].aggregate(pipeline).to_list(length=limit)
-            logger.info(f"📊 Retrieved {len(breakdowns)} breakdowns from aggregation")
+            logger.info(f"📊 Retrieved {len(breakdowns)} unique breakdowns from aggregation")
             
-            # Get total count
-            total = await db['dance_breakdowns'].count_documents({})
+            # Get total count of unique videos
+            unique_count_pipeline = [
+                {"$group": {"_id": "$videoUrl"}},
+                {"$count": "total"}
+            ]
+            unique_count_result = await db['dance_breakdowns'].aggregate(unique_count_pipeline).to_list(length=1)
+            total = unique_count_result[0]['total'] if unique_count_result else 0
             
             # Convert ObjectIds to strings
             for breakdown in breakdowns:
@@ -415,7 +431,7 @@ class DanceBreakdownService:
                 else:
                     breakdown['durationFormatted'] = "0:00"
             
-            logger.info(f"✅ Returning {len(breakdowns)} breakdowns")
+            logger.info(f"✅ Returning {len(breakdowns)} unique breakdowns")
             return {
                 "breakdowns": breakdowns,
                 "total": total,
