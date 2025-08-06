@@ -845,73 +845,87 @@ Authorization: Bearer <access_token>
 }
 ``` 
 
-### **GET /api/activities/me**
-**Description:** Get all user activities (sessions, challenges, breakdowns) unified  
+### **GET /api/user/history**
+**Description:** Get unified user history combining sessions, challenges, and dance breakdowns  
 **Authentication:** Required  
 
 **Parameters:**
 - `page` (query): Page number (default: 1)
 - `limit` (query): Items per page (default: 20)
-- `activity_type` (query): Filter by activity type - 'sessions', 'challenges', 'breakdowns', or None for all (default: None)
+- `activity_type` (query): Filter by activity type - 'session', 'challenge', 'breakdown', or null for all (default: null)
 
 **Response:**
 ```json
 {
-    "activities": [
-        {
-            "_id": "6893835c1ef74973896e2bf3",
-            "activityType": "challenge",
-            "activityDate": "2025-08-06T16:31:23.000Z",
-            "title": "Challenge Submission",
-            "description": "5 minutes • 45 calories",
-            "videoUrl": "https://idanceshreyansh.s3.ap-south-1.amazonaws.com/...",
-            "durationMinutes": 5,
-            "caloriesBurned": 45,
-            "score": 85,
-            "isPublic": true
-        },
-        {
-            "_id": "6893823c1515c715f0ae3f96",
-            "activityType": "breakdown",
-            "activityDate": "2025-08-06T16:26:36.000Z",
-            "title": "Dance Breakdown",
-            "description": "5 steps • Intermediate",
-            "videoUrl": "https://www.youtube.com/shorts/4ybhF5fK2bo",
-            "duration": 30.0,
-            "totalSteps": 5,
-            "difficultyLevel": "Intermediate",
-            "success": true
-        },
-        {
-            "_id": "68937e749523ddad93840789",
-            "activityType": "session",
-            "activityDate": "2025-08-06T16:10:28.000Z",
-            "title": "Hip Hop Session",
-            "description": "15 minutes • 120 calories",
-            "startTime": "2025-08-06T16:10:28.000Z",
-            "endTime": "2025-08-06T16:25:28.000Z",
-            "style": "hip hop",
-            "sessionType": "freestyle",
-            "durationMinutes": 15,
-            "caloriesBurned": 120,
-            "isPublic": true,
-            "videoThumbnailUrl": "https://...",
-            "likesCount": 5,
-            "commentsCount": 2,
-            "status": "completed"
-        }
-    ],
-    "total": 3,
-    "page": 1,
-    "limit": 20,
-    "hasMore": false,
-    "counts": {
-        "sessions": 8,
-        "challenges": 5,
-        "breakdowns": 7,
-        "total": 20
+  "activities": [
+    {
+      "_id": "68936a1f93b74bc4f0112219",
+      "activityType": "session",
+      "activityTitle": "Hip Hop Session",
+      "activitySubtitle": "15 min • 120 cal",
+      "timestamp": "2025-08-06T14:43:43.280000",
+      "previewImage": "https://example.com/thumbnail.jpg",
+      "metadata": {
+        "duration": 15,
+        "calories": 120,
+        "style": "Hip Hop",
+        "score": 85,
+        "level": 2
+      }
+    },
+    {
+      "_id": "6893835c1ef74973896e2bf3",
+      "activityType": "challenge",
+      "activityTitle": "Freestyle Friday Challenge",
+      "activitySubtitle": "Score: 92 • 8 min",
+      "timestamp": "2025-08-06T16:31:23.000000",
+      "previewImage": "https://example.com/challenge-thumb.jpg",
+      "metadata": {
+        "score": 92,
+        "duration": 8,
+        "calories": 65,
+        "challengeTitle": "Freestyle Friday",
+        "challengeType": "freestyle",
+        "points": 100
+      }
+    },
+    {
+      "_id": "689384f3feb56ff7db9aad0f",
+      "activityType": "breakdown",
+      "activityTitle": "Dance Breakdown",
+      "activitySubtitle": "9 steps • Intermediate",
+      "timestamp": "2025-08-06T16:38:11.368000",
+      "previewImage": "https://example.com/breakdown-thumb.jpg",
+      "metadata": {
+        "totalSteps": 9,
+        "duration": 30,
+        "difficulty": "Intermediate",
+        "originalUrl": "https://www.youtube.com/shorts/xMmYwTXrW8g",
+        "playableUrl": "https://s3.amazonaws.com/breakdown.mp4"
+      }
     }
+  ],
+  "total": 3,
+  "page": 1,
+  "limit": 20,
+  "hasMore": false,
+  "summary": {
+    "sessions": 1,
+    "challenges": 1,
+    "breakdowns": 1,
+    "total": 3
+  }
 }
 ```
 
-### **GET /api/sessions/me** 
+**Activity Types:**
+- **`session`**: Dance practice sessions with duration, calories, style, and score
+- **`challenge`**: Challenge submissions with score, duration, challenge details, and points
+- **`breakdown`**: Dance breakdowns with step count, difficulty, and video URLs
+
+**Frontend Usage:**
+- Use `activityType` to show different icons/colors for each activity
+- Use `activityTitle` and `activitySubtitle` for display text
+- Use `previewImage` for thumbnails/video previews
+- Use `metadata` for detailed information specific to each activity type
+- Use `summary` to show total counts for each activity type 
