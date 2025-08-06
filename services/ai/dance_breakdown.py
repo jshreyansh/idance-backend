@@ -952,6 +952,10 @@ class DanceBreakdownService:
             # Upload video to S3 for client playback
             playable_video_url = await self.upload_video_to_s3(temp_video, user_id, request.video_url)
             
+            # Initialize variables
+            wav_path = None
+            bpm = None
+            
             try:
                 # Extract audio and detect BPM
                 wav_path = self.extract_audio(temp_video)
@@ -1017,9 +1021,16 @@ class DanceBreakdownService:
                 
             finally:
                 # Clean up temporary files
-                for temp_file in [temp_video, wav_path]:
-                    if os.path.exists(temp_file):
-                        os.remove(temp_file)
+                temp_files = [temp_video]
+                if wav_path:
+                    temp_files.append(wav_path)
+                
+                for temp_file in temp_files:
+                    if temp_file and os.path.exists(temp_file):
+                        try:
+                            os.remove(temp_file)
+                        except Exception as e:
+                            logger.warning(f"Failed to clean up temp file {temp_file}: {str(e)}")
                         
         except Exception as e:
             logger.error(f"Error processing dance breakdown: {str(e)}")
