@@ -19,6 +19,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
+from fastapi import HTTPException
 
 from services.ai.models import (
     DanceBreakdownRequest, 
@@ -199,6 +200,43 @@ class DanceBreakdownService:
         logger.error(error_msg)
         raise Exception(error_msg)
     
+    async def upload_video_to_s3(self, video_path: str, user_id: str, original_url: str) -> str:
+        """Upload downloaded video to S3 and return playable URL"""
+        try:
+            import boto3
+            from botocore.exceptions import ClientError
+            import hashlib
+            import os
+            
+            # Initialize S3 client
+            s3_client = boto3.client(
+                's3',
+                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+                region_name=os.getenv('AWS_REGION', 'ap-south-1')
+            )
+            
+            # Generate unique file key
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            url_hash = hashlib.md5(original_url.encode()).hexdigest()[:8]
+            file_key = f"dance-breakdowns/{user_id}/{timestamp}_{url_hash}.mp4"
+            
+            # Upload to S3
+            bucket_name = os.getenv('S3_BUCKET_NAME', 'idanceshreyansh')
+            s3_client.upload_file(video_path, bucket_name, file_key)
+            
+            # Generate public URL
+            bucket_url = os.getenv('S3_BUCKET_URL', f'https://{bucket_name}.s3.ap-south-1.amazonaws.com')
+            video_url = f"{bucket_url}/{file_key}"
+            
+            logger.info(f"✅ Video uploaded to S3: {video_url}")
+            return video_url
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to upload video to S3: {str(e)}")
+            # Return original URL as fallback
+            return original_url
+    
     def _get_db(self):
         """Get database connection"""
         if not self.db:
@@ -213,6 +251,7 @@ class DanceBreakdownService:
             breakdown_doc = {
                 "userId": ObjectId(user_id),
                 "videoUrl": request.video_url,
+                "playableVideoUrl": response.playable_video_url,
                 "title": response.title,
                 "mode": request.mode,
                 "targetDifficulty": request.target_difficulty,
@@ -297,6 +336,97 @@ class DanceBreakdownService:
             logger.error(f"❌ Failed to get breakdown by ID: {str(e)}")
             raise
     
+    async def get_all_breakdown_videos(self, page: int = 1, limit: int = 20) -> Dict:
+        """Get all breakdown videos with details for the input screen"""
+        try:
+            db = self._get_db()
+            
+            # Debug: Check if collection exists and has data
+            total_docs = await db['dance_breakdowns'].count_documents({})
+            logger.info(f"📊 Total breakdowns in database: {total_docs}")
+            
+            if total_docs == 0:
+                logger.warning("⚠️ No breakdowns found in database")
+                return {
+                    "breakdowns": [],
+                    "total": 0,
+                    "page": page,
+                    "limit": limit,
+                    "hasMore": False
+                }
+            
+            # Calculate skip
+            skip = (page - 1) * limit
+            
+            # Get breakdowns with user info
+            pipeline = [
+                {
+                    "$lookup": {
+                        "from": "users",
+                        "localField": "userId",
+                        "foreignField": "_id",
+                        "as": "user"
+                    }
+                },
+                {"$unwind": "$user"},
+                {
+                    "$project": {
+                        "_id": 1,
+                        "videoUrl": 1,
+                        "playableVideoUrl": 1,
+                        "title": 1,
+                        "duration": 1,
+                        "bpm": 1,
+                        "difficultyLevel": 1,
+                        "totalSteps": 1,
+                        "success": 1,
+                        "createdAt": 1,
+                        "userProfile": {
+                            "displayName": "$user.profile.displayName",
+                            "avatarUrl": "$user.profile.avatarUrl",
+                            "level": "$user.stats.level"
+                        }
+                    }
+                },
+                {"$sort": {"createdAt": -1}},
+                {"$skip": skip},
+                {"$limit": limit}
+            ]
+            
+            breakdowns = await db['dance_breakdowns'].aggregate(pipeline).to_list(length=limit)
+            logger.info(f"📊 Retrieved {len(breakdowns)} breakdowns from aggregation")
+            
+            # Get total count
+            total = await db['dance_breakdowns'].count_documents({})
+            
+            # Convert ObjectIds to strings
+            for breakdown in breakdowns:
+                breakdown['_id'] = str(breakdown['_id'])
+                breakdown['id'] = breakdown['_id']  # Add id field for consistency
+                
+                # Generate thumbnail URL (you can implement thumbnail generation later)
+                breakdown['thumbnailUrl'] = breakdown.get('playableVideoUrl', '').replace('.mp4', '_thumb.jpg')
+                
+                # Format duration
+                if breakdown.get('duration'):
+                    minutes = int(breakdown['duration'] // 60)
+                    seconds = int(breakdown['duration'] % 60)
+                    breakdown['durationFormatted'] = f"{minutes}:{seconds:02d}"
+                else:
+                    breakdown['durationFormatted'] = "0:00"
+            
+            logger.info(f"✅ Returning {len(breakdowns)} breakdowns")
+            return {
+                "breakdowns": breakdowns,
+                "total": total,
+                "page": page,
+                "limit": limit,
+                "hasMore": (page * limit) < total
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to get breakdown videos: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to get breakdown videos: {str(e)}")
 
     
     def extract_audio(self, video_path: str) -> str:
@@ -758,6 +888,9 @@ class DanceBreakdownService:
             # Download video
             temp_video = await self.download_video(request.video_url, cookies_path)
             
+            # Upload video to S3 for client playback
+            playable_video_url = await self.upload_video_to_s3(temp_video, user_id, request.video_url)
+            
             try:
                 # Extract audio and detect BPM
                 wav_path = self.extract_audio(temp_video)
@@ -798,7 +931,8 @@ class DanceBreakdownService:
                 # Create response
                 response = DanceBreakdownResponse(
                     success=True,
-                    video_url=request.video_url,
+                    video_url=request.video_url,  # Original URL
+                    playable_video_url=playable_video_url,  # S3 URL for playback
                     title="Dance Video Analysis",
                     duration=30.0,  # Default duration
                     bpm=bpm,
@@ -831,6 +965,7 @@ class DanceBreakdownService:
             return DanceBreakdownResponse(
                 success=False,
                 video_url=request.video_url,
+                playable_video_url=None,
                 title="",
                 duration=0.0,
                 bpm=None,

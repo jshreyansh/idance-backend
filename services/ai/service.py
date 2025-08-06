@@ -10,9 +10,21 @@ logger = logging.getLogger(__name__)
 
 ai_router = APIRouter()
 
-@ai_router.get('/ai/health')
-def ai_health():
-    return {"status": "ai service ok"}
+@ai_router.get('/api/ai/health')
+async def ai_health():
+    """
+    Health check for AI service
+    """
+    return {
+        "status": "healthy",
+        "service": "ai_pose_analysis",
+        "active_analyses": len(pose_analysis_service.analysis_queue),
+        "version": "1.0.0",
+        "features": [
+            "pose_analysis",
+            "dance_breakdown"
+        ]
+    }
 
 @ai_router.post('/api/ai/analyze-pose', response_model=AnalysisResponse)
 async def analyze_pose(
@@ -175,3 +187,23 @@ async def get_user_dance_breakdowns(
     except Exception as e:
         logger.error(f"❌ Error getting user breakdowns: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get breakdowns: {str(e)}") 
+
+@ai_router.get('/api/ai/dance-breakdowns/videos')
+async def get_breakdown_videos(
+    page: int = 1,
+    limit: int = 20,
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Get all breakdown videos for the input screen
+    Shows recent breakdowns by people with video URLs and thumbnails
+    """
+    try:
+        result = await dance_breakdown_service.get_all_breakdown_videos(page, limit)
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error in get breakdown videos endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get breakdown videos: {str(e)}") 
