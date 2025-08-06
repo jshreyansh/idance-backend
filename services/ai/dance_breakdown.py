@@ -112,56 +112,93 @@ class DanceBreakdownService:
         """Download video from URL with multiple fallback strategies"""
         temp_file = tempfile.mktemp(suffix=".mp4")
         
-        # Clean URL to extract just the video ID (remove playlist parameters)
-        clean_url = self._clean_youtube_url(url)
+        # Handle different URL types
+        if "instagram.com" in url:
+            # For Instagram URLs, use the original URL directly
+            clean_url = url
+            logger.info(f"Processing Instagram URL: {clean_url}")
+        else:
+            # For YouTube URLs, clean to extract just the video ID
+            clean_url = self._clean_youtube_url(url)
+            logger.info(f"Processing YouTube URL: {clean_url}")
+        
         logger.info(f"Attempting to download: {clean_url}")
         
         # Multiple download strategies to try
-        strategies = [
-            # Strategy 1: iOS client (most reliable)
-            {
-                'name': 'ios_client',
-                'opts': {
-                    'format': 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
-                    'outtmpl': temp_file,
-                    'cookiefile': cookies_path if cookies_path and os.path.exists(cookies_path) else None,
-                    'quiet': True,
-                    'noplaylist': True,  # Crucial: Don't download playlists
-                    'extractor_args': {
-                        'youtube': {
-                            'player_client': ['ios'],
-                        }
+        strategies = []
+        
+        if "instagram.com" in url:
+            # Instagram-specific strategies
+            strategies = [
+                # Strategy 1: Instagram with cookies (most reliable)
+                {
+                    'name': 'instagram_with_cookies',
+                    'opts': {
+                        'format': 'best[ext=mp4]/best',
+                        'outtmpl': temp_file,
+                        'cookiefile': cookies_path if cookies_path and os.path.exists(cookies_path) else None,
+                        'quiet': True,
+                        'noplaylist': True,
+                    }
+                },
+                # Strategy 2: Instagram without cookies
+                {
+                    'name': 'instagram_basic',
+                    'opts': {
+                        'format': 'best[ext=mp4]/best',
+                        'outtmpl': temp_file,
+                        'quiet': True,
+                        'noplaylist': True,
                     }
                 }
-            },
-            # Strategy 2: Android client  
-            {
-                'name': 'android_client',
-                'opts': {
-                    'format': 'best[ext=mp4]/best',
-                    'outtmpl': temp_file,
-                    'cookiefile': cookies_path if cookies_path and os.path.exists(cookies_path) else None,
-                    'quiet': True,
-                    'noplaylist': True,
-                    'extractor_args': {
-                        'youtube': {
-                            'player_client': ['android'],
+            ]
+        else:
+            # YouTube-specific strategies
+            strategies = [
+                # Strategy 1: iOS client (most reliable)
+                {
+                    'name': 'ios_client',
+                    'opts': {
+                        'format': 'best[ext=mp4][height<=720]/best[ext=mp4]/best',
+                        'outtmpl': temp_file,
+                        'cookiefile': cookies_path if cookies_path and os.path.exists(cookies_path) else None,
+                        'quiet': True,
+                        'noplaylist': True,  # Crucial: Don't download playlists
+                        'extractor_args': {
+                            'youtube': {
+                                'player_client': ['ios'],
+                            }
                         }
                     }
+                },
+                # Strategy 2: Android client  
+                {
+                    'name': 'android_client',
+                    'opts': {
+                        'format': 'best[ext=mp4]/best',
+                        'outtmpl': temp_file,
+                        'cookiefile': cookies_path if cookies_path and os.path.exists(cookies_path) else None,
+                        'quiet': True,
+                        'noplaylist': True,
+                        'extractor_args': {
+                            'youtube': {
+                                'player_client': ['android'],
+                            }
+                        }
+                    }
+                },
+                # Strategy 3: Basic download (lowest quality)
+                {
+                    'name': 'basic_low_quality',
+                    'opts': {
+                        'format': 'worst[ext=mp4]/worst',
+                        'outtmpl': temp_file,
+                        'cookiefile': cookies_path if cookies_path and os.path.exists(cookies_path) else None,
+                        'quiet': True,
+                        'noplaylist': True,
+                    }
                 }
-            },
-            # Strategy 3: Basic download (lowest quality)
-            {
-                'name': 'basic_low_quality',
-                'opts': {
-                    'format': 'worst[ext=mp4]/worst',
-                    'outtmpl': temp_file,
-                    'cookiefile': cookies_path if cookies_path and os.path.exists(cookies_path) else None,
-                    'quiet': True,
-                    'noplaylist': True,
-                }
-            }
-        ]
+            ]
         
         for i, strategy in enumerate(strategies):
             try:
@@ -190,12 +227,20 @@ class DanceBreakdownService:
                 continue
         
         # If all strategies failed, provide helpful error message
-        error_msg = f"All download strategies failed for {url}. This video may be:"
-        error_msg += "\n- Geo-restricted or region-locked"
-        error_msg += "\n- Age-restricted requiring sign-in"
-        error_msg += "\n- Private or deleted"
-        error_msg += "\n- Protected by YouTube's anti-bot measures"
-        error_msg += "\nTry using a different video URL."
+        if "instagram.com" in url:
+            error_msg = f"All download strategies failed for Instagram URL {url}. This video may be:"
+            error_msg += "\n- Private or deleted"
+            error_msg += "\n- Age-restricted requiring sign-in"
+            error_msg += "\n- Protected by Instagram's anti-bot measures"
+            error_msg += "\n- Requires authentication (check cookies_instagram.txt)"
+            error_msg += "\nTry using a different Instagram video URL."
+        else:
+            error_msg = f"All download strategies failed for YouTube URL {url}. This video may be:"
+            error_msg += "\n- Geo-restricted or region-locked"
+            error_msg += "\n- Age-restricted requiring sign-in"
+            error_msg += "\n- Private or deleted"
+            error_msg += "\n- Protected by YouTube's anti-bot measures"
+            error_msg += "\nTry using a different YouTube video URL."
         
         logger.error(error_msg)
         raise Exception(error_msg)
@@ -875,52 +920,6 @@ class DanceBreakdownService:
         try:
             logger.info(f"🎬 Starting dance breakdown for URL: {request.video_url}")
             logger.info(f"🎬 Mode: {request.mode}")
-            
-            # Check if breakdown already exists for this video URL
-            db = self._get_db()
-            existing_breakdown = await db['dance_breakdowns'].find_one({
-                "videoUrl": request.video_url,
-                "success": True
-            })
-            
-            if existing_breakdown:
-                logger.info(f"✅ Found existing breakdown for URL: {request.video_url}")
-                
-                # Convert existing breakdown to response format
-                dance_steps = []
-                for step_data in existing_breakdown.get('steps', []):
-                    dance_step = DanceStep(
-                        step_number=step_data.get('stepNumber', 0),
-                        start_timestamp=step_data.get('startTimestamp', ''),
-                        end_timestamp=step_data.get('endTimestamp', ''),
-                        step_name=step_data.get('stepName', ''),
-                        global_description=step_data.get('global_description', ''),
-                        description=step_data.get('description', ''),
-                        style_and_history=step_data.get('styleAndHistory', ''),
-                        spice_it_up=step_data.get('spiceItUp', '')
-                    )
-                    dance_steps.append(dance_step)
-                
-                # Create response from existing data
-                response = DanceBreakdownResponse(
-                    success=True,
-                    video_url=existing_breakdown.get('videoUrl', request.video_url),
-                    playable_video_url=existing_breakdown.get('playableVideoUrl'),
-                    title=existing_breakdown.get('title', 'Dance Video Analysis'),
-                    duration=existing_breakdown.get('duration', 30.0),
-                    bpm=existing_breakdown.get('bpm'),
-                    difficulty_level=existing_breakdown.get('difficultyLevel', 'Intermediate'),
-                    total_steps=existing_breakdown.get('totalSteps', len(dance_steps)),
-                    routine_analysis=existing_breakdown.get('routineAnalysis', {}),
-                    steps=dance_steps,
-                    outline_url=existing_breakdown.get('outlineUrl', ''),
-                    mode=existing_breakdown.get('mode', request.mode)
-                )
-                
-                logger.info(f"✅ Returning existing breakdown with {len(dance_steps)} steps")
-                return response
-            
-            logger.info(f"🆕 No existing breakdown found, processing new video: {request.video_url}")
             
             # Determine cookies file based on URL
             cookies_path = None

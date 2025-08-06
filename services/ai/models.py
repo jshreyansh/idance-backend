@@ -105,7 +105,8 @@ class DanceStep(BaseModel):
 class DanceBreakdownResponse(BaseModel):
     """Response from dance breakdown analysis"""
     success: bool
-    video_url: str
+    video_url: str  # Original URL
+    playable_video_url: Optional[str] = None  # S3 URL for downloaded video
     title: str
     duration: float
     bpm: Optional[float] = None

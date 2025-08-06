@@ -50,10 +50,15 @@ async def google_sign_in(data: GoogleSignInRequest):
     """
     Handle Google Sign-In using ID token and access token
     """
+    print(f"🔍 Google sign-in attempt received")
+    print(f"🔍 ID Token length: {len(data.idToken) if data.idToken else 0}")
+    print(f"🔍 Access Token length: {len(data.accessToken) if data.accessToken else 0}")
+    
     db = Database.get_database()
     
     try:
         # Verify Google ID token and get basic user info
+        print(f"🔍 Attempting to verify Google token...")
         google_user_info = await verify_google_token(data.idToken)
         
         # Fetch extended profile data from Google People API
@@ -171,11 +176,13 @@ async def test_google_config():
     load_dotenv()
     
     google_client_id = os.getenv("GOOGLE_CLIENT_ID")
+    google_client_id_web = os.getenv("GOOGLE_CLIENT_ID_WEB")
     jwt_secret = os.getenv("JWT_SECRET", "default")
     
     return {
         "status": "Google OAuth configuration check",
-        "google_client_id_configured": bool(google_client_id and google_client_id != ""),
+        "google_client_id_configured": bool(google_client_id and google_client_id != "your-google-client-id.apps.googleusercontent.com"),
+        "google_client_id_web_configured": bool(google_client_id_web and google_client_id_web != ""),
         "jwt_secret_configured": bool(jwt_secret and jwt_secret != "default"),
         "endpoints_available": [
             "POST /auth/google - Google Sign-In",

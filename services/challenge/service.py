@@ -62,7 +62,7 @@ class ChallengeService:
             "badgeName": challenge_data.badgeName,
             "badgeIconURL": challenge_data.badgeIconURL,
             "scoringCriteria": challenge_data.scoringCriteria.dict(),
-            "category": challenge_data.category,
+            "categories": challenge_data.categories or [],
             "tags": challenge_data.tags or [],
             "isActive": True,
             "createdBy": user_id,
@@ -142,8 +142,9 @@ class ChallengeService:
         if search_request.difficulty:
             query["difficulty"] = search_request.difficulty
         
-        if search_request.category:
-            query["category"] = search_request.category
+        if search_request.categories:
+            # Support multiple categories - challenge must have at least one of the requested categories
+            query["categories"] = {"$in": search_request.categories}
         
         if search_request.tags:
             query["tags"] = {"$in": search_request.tags}
@@ -245,11 +246,35 @@ class ChallengeService:
 
     async def get_challenge_categories(self) -> List[str]:
         """Get all challenge categories"""
-        db = self._get_db()
+        # Return predefined categories
+        predefined_categories = [
+            "hip hop",
+            "ballet", 
+            "trendy",
+            "party",
+            "sexy",
+            "contemporary",
+            "jazz",
+            "street",
+            "latin",
+            "afro",
+            "bollywood",
+            "k-pop",
+            "freestyle",
+            "choreography"
+        ]
         
-        # Get unique categories
-        categories = await db['challenges'].distinct("category")
-        return [cat for cat in categories if cat]  # Filter out None/empty values
+        # Also get any additional categories from existing challenges
+        db = self._get_db()
+        existing_categories = await db['challenges'].distinct("categories")
+        
+        # Flatten the categories arrays and get unique values
+        all_categories = set(predefined_categories)
+        for category_list in existing_categories:
+            if category_list:
+                all_categories.update(category_list)
+        
+        return sorted(list(all_categories))
 
     async def get_challenge_tags(self) -> List[str]:
         """Get all challenge tags"""
@@ -603,6 +628,48 @@ class ChallengeService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to get public submissions: {str(e)}")
 
+    async def get_challenges_by_category(self, category: str, page: int = 1, limit: int = 20, active_only: bool = True) -> ChallengeListResponse:
+        """Get challenges by specific category"""
+        try:
+            skip = (page - 1) * limit
+            
+            # Build query
+            query = {"categories": {"$in": [category]}}
+            if active_only:
+                query["isActive"] = True
+            
+            # Get total count
+            total = await self._get_db()['challenges'].count_documents(query)
+            
+            # Get challenges
+            challenges_cursor = self._get_db()['challenges'].find(query).sort("createdAt", -1).skip(skip).limit(limit)
+            challenges = await challenges_cursor.to_list(length=limit)
+            
+            # Convert to response models
+            challenge_responses = []
+            for challenge in challenges:
+                try:
+                    # Convert _id from ObjectId to string
+                    challenge['_id'] = str(challenge['_id'])
+                    
+                    # Convert scoringCriteria dict back to ChallengeCriteria object
+                    if 'scoringCriteria' in challenge and isinstance(challenge['scoringCriteria'], dict):
+                        challenge['scoringCriteria'] = ChallengeCriteria(**challenge['scoringCriteria'])
+                    challenge_responses.append(ChallengeResponse(**challenge))
+                except Exception as e:
+                    print(f"Error processing challenge {challenge.get('_id')}: {e}")
+                    continue
+            
+            return ChallengeListResponse(
+                challenges=challenge_responses,
+                total=total,
+                page=page,
+                limit=limit
+            )
+        except Exception as e:
+            print(f"Error in get_challenges_by_category: {e}")
+            raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
+
 # Global service instance
 challenge_service = ChallengeService()
 
@@ -629,6 +696,27 @@ async def get_today_challenge(user_id: str = Depends(get_current_user_id)):
 async def get_upcoming_challenges(user_id: str = Depends(get_current_user_id), days: int = 7):
     """Get upcoming challenges for the next N days"""
     return await challenge_service.get_upcoming_challenges(days)
+
+@challenge_router.get('/api/challenges/categories', response_model=List[str])
+async def get_challenge_categories(user_id: str = Depends(get_current_user_id)):
+    """Get all challenge categories"""
+    return await challenge_service.get_challenge_categories()
+
+@challenge_router.get('/api/challenges/tags', response_model=List[str])
+async def get_challenge_tags(user_id: str = Depends(get_current_user_id)):
+    """Get all challenge tags"""
+    return await challenge_service.get_challenge_tags()
+
+@challenge_router.get('/api/challenges/category/{category}', response_model=ChallengeListResponse)
+async def get_challenges_by_category(
+    category: str,
+    page: int = 1,
+    limit: int = 20,
+    active_only: bool = True,
+    user_id: str = Depends(get_current_user_id)
+):
+    """Get challenges by specific category"""
+    return await challenge_service.get_challenges_by_category(category, page, limit, active_only)
 
 @challenge_router.put('/api/challenges/{challenge_id}', response_model=dict)
 async def update_challenge(
@@ -682,16 +770,6 @@ async def search_challenges(
 ):
     """Search and filter challenges"""
     return await challenge_service.search_challenges(search_request)
-
-@challenge_router.get('/api/challenges/categories', response_model=List[str])
-async def get_challenge_categories(user_id: str = Depends(get_current_user_id)):
-    """Get all challenge categories"""
-    return await challenge_service.get_challenge_categories()
-
-@challenge_router.get('/api/challenges/tags', response_model=List[str])
-async def get_challenge_tags(user_id: str = Depends(get_current_user_id)):
-    """Get all challenge tags"""
-    return await challenge_service.get_challenge_tags()
 
 @challenge_router.get('/api/challenges/{challenge_id}/leaderboard', response_model=ChallengeLeaderboardResponse)
 async def get_challenge_leaderboard(

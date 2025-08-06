@@ -24,7 +24,7 @@ class ChallengeCreate(BaseModel):
     badgeIconURL: str = Field(..., description="URL for badge icon")
     scoringCriteria: Optional[ChallengeCriteria] = None
     thumbnailURL: Optional[str] = None
-    category: Optional[str] = Field(None, description="Challenge category")
+    categories: Optional[List[str]] = Field(None, description="Challenge categories (e.g., ['hip hop', 'trendy'])")
     tags: Optional[List[str]] = Field(None, description="Challenge tags")
     
     @model_validator(mode='after')
@@ -50,7 +50,7 @@ class ChallengeResponse(BaseModel):
     badgeName: str
     badgeIconURL: str
     scoringCriteria: ChallengeCriteria
-    category: Optional[str]
+    categories: Optional[List[str]]
     tags: Optional[List[str]]
     isActive: bool = True
     createdBy: str
@@ -79,7 +79,7 @@ class Challenge(BaseModel):
     badgeName: str
     badgeIconURL: str
     scoringCriteria: ChallengeCriteria
-    category: Optional[str]
+    categories: Optional[List[str]]
     tags: Optional[List[str]]
     isActive: bool = True
     createdBy: str
@@ -112,7 +112,7 @@ class TodayChallengeResponse(BaseModel):
     difficulty: Literal['beginner', 'intermediate', 'advanced']
     badgeName: str
     badgeIconURL: str
-    category: Optional[str]
+    categories: Optional[List[str]]
     tags: Optional[List[str]]
 
 # New unified submission models
@@ -166,7 +166,7 @@ class ChallengeSearchRequest(BaseModel):
     query: Optional[str] = None
     type: Optional[str] = None
     difficulty: Optional[str] = None
-    category: Optional[str] = None
+    categories: Optional[List[str]] = Field(None, description="Filter by categories (e.g., ['hip hop', 'trendy'])")
     tags: Optional[List[str]] = None
     active_only: bool = True
     page: int = 1

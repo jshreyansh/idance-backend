@@ -140,6 +140,26 @@ async def get_dance_breakdown(
         logger.error(f"❌ Error getting dance breakdown: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get breakdown: {str(e)}")
 
+@ai_router.get('/api/ai/dance-breakdowns/videos')
+async def get_breakdown_videos(
+    page: int = 1,
+    limit: int = 20,
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Get all breakdown videos for the input screen
+    Shows recent breakdowns by people with video URLs and thumbnails
+    """
+    try:
+        result = await dance_breakdown_service.get_all_breakdown_videos(page, limit)
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error in get breakdown videos endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get breakdown videos: {str(e)}")
+
 @ai_router.get('/api/ai/health')
 async def ai_health():
     """

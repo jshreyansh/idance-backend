@@ -6,7 +6,7 @@ Challenge submission service for handling user submissions to challenges
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
-from datetime import datetime
+from datetime import datetime, timedelta
 from bson import ObjectId
 from infra.mongo import Database
 from services.user.service import get_current_user_id
@@ -678,6 +678,32 @@ class SubmissionService:
             duration_seconds = video_data.duration or 0
             duration_minutes = int(duration_seconds / 60) if duration_seconds > 0 else 1
 
+            # Get current date for weekly activity
+            today = datetime.utcnow().strftime('%Y-%m-%d')
+            
+            # Get current user stats
+            user_stats = await db['user_stats'].find_one({'_id': ObjectId(user_id)}) or {}
+            weekly_activity = user_stats.get('weeklyActivity', [])
+            
+            # Update weekly activity for today
+            today_found = False
+            for activity in weekly_activity:
+                if activity['date'] == today:
+                    activity['sessionsCount'] += 1
+                    today_found = True
+                    break
+            
+            if not today_found:
+                weekly_activity.append({'date': today, 'sessionsCount': 1})
+            
+            # Keep only last 7 days
+            today_date = datetime.strptime(today, '%Y-%m-%d').date()
+            seven_days_ago = today_date - timedelta(days=6)
+            weekly_activity = [
+                activity for activity in weekly_activity 
+                if datetime.strptime(activity['date'], '%Y-%m-%d').date() >= seven_days_ago
+            ]
+
             # Update challenge-specific stats
             if challenge_type == "freestyle":
                 # For freestyle, duration is directly related to calories burned
@@ -692,7 +718,8 @@ class SubmissionService:
                         },
                         "$set": {
                             "updatedAt": datetime.utcnow(),
-                            "mostPlayedStyle": "freestyle"
+                            "mostPlayedStyle": "freestyle",
+                            "weeklyActivity": weekly_activity
                         }
                     },
                     upsert=True
@@ -711,7 +738,8 @@ class SubmissionService:
                         },
                         "$set": {
                             "updatedAt": datetime.utcnow(),
-                            "mostPlayedStyle": "static"
+                            "mostPlayedStyle": "static",
+                            "weeklyActivity": weekly_activity
                         }
                     },
                     upsert=True
@@ -730,7 +758,8 @@ class SubmissionService:
                         },
                         "$set": {
                             "updatedAt": datetime.utcnow(),
-                            "mostPlayedStyle": challenge_type
+                            "mostPlayedStyle": challenge_type,
+                            "weeklyActivity": weekly_activity
                         }
                     },
                     upsert=True
