@@ -167,13 +167,18 @@ async def complete_session(
         {"_id": ObjectId(session_id), "userId": ObjectId(user_id)},
         {"$set": update_fields}
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Session not found or not owned by user")
     
-    # Update user stats with session data
-    await update_user_stats_from_session(db, user_id, data)
-    
-    return {"message": "Session completed"}
+    if result.modified_count > 0:
+        # Update user stats and streaks using unified function
+        from services.user.service import update_user_streaks_and_activity_unified
+        await update_user_streaks_and_activity_unified(db, user_id, "session")
+        
+        # Update session-specific stats
+        await update_user_stats_from_session(db, user_id, update_fields)
+        
+        return {"message": "Session completed successfully"}
+    else:
+        raise HTTPException(status_code=404, detail="Session not found or already completed")
 
 async def update_user_stats_from_session(db, user_id, session_data):
     """Update user stats based on completed session data"""

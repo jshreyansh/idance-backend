@@ -193,6 +193,83 @@ async def update_my_stats(
     )
     return {'message': 'Stats updated'} 
 
+async def update_user_streaks_and_activity_unified(db, user_id: str, activity_type: str = "session"):
+    """
+    Unified function to update streaks and weekly activity for ALL activity types
+    Called by sessions, challenges, and breakdowns
+    """
+    try:
+        user_stats = await db['user_stats'].find_one({'_id': ObjectId(user_id)}) or {}
+        
+        last_active_date = user_stats.get('lastActiveDate')
+        current_streak = user_stats.get('currentStreakDays', 0)
+        max_streak = user_stats.get('maxStreakDays', 0)
+        weekly_activity = user_stats.get('weeklyActivity', [])
+        
+        # Calculate streak
+        today = datetime.utcnow().strftime('%Y-%m-%d')
+        if last_active_date:
+            last_date = datetime.strptime(last_active_date, '%Y-%m-%d').date()
+            today_date = datetime.strptime(today, '%Y-%m-%d').date()
+            yesterday = today_date - timedelta(days=1)
+            
+            if last_date == yesterday:
+                # Consecutive day, increment streak
+                current_streak += 1
+            elif last_date == today_date:
+                # Same day, no change (shouldn't happen due to check above)
+                pass
+            else:
+                # Gap in days, reset streak to 1
+                current_streak = 1
+        else:
+            # First ever activity
+            current_streak = 1
+        
+        # Update max streak
+        max_streak = max(max_streak, current_streak)
+        
+        # Update weekly activity (keep last 7 days)
+        today_found = False
+        for activity in weekly_activity:
+            if activity['date'] == today:
+                activity['activitiesCount'] += 1  # ✅ Changed from sessionsCount to activitiesCount
+                today_found = True
+                break
+        
+        if not today_found:
+            weekly_activity.append({'date': today, 'activitiesCount': 1})  # ✅ Changed from sessionsCount to activitiesCount
+        
+        # Keep only last 7 days
+        today_date = datetime.strptime(today, '%Y-%m-%d').date()
+        seven_days_ago = today_date - timedelta(days=6)
+        weekly_activity = [
+            activity for activity in weekly_activity 
+            if datetime.strptime(activity['date'], '%Y-%m-%d').date() >= seven_days_ago
+        ]
+        
+        # Update user stats
+        await db['user_stats'].update_one(
+            {'_id': ObjectId(user_id)},
+            {
+                '$set': {
+                    'lastActiveDate': today,
+                    'currentStreakDays': current_streak,
+                    'maxStreakDays': max_streak,
+                    'weeklyActivity': weekly_activity,
+                    'updatedAt': datetime.utcnow()
+                },
+                '$inc': {'totalActivities': 1}  # ✅ Track total activities instead of just sessions
+            },
+            upsert=True
+        )
+        
+        logger.info(f"✅ Updated streaks and activity for user {user_id}, activity type: {activity_type}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error updating streaks and activity for user {user_id}: {str(e)}")
+        raise
+
 class HeatmapResponse(BaseModel):
     date: str
     sessionsCount: int
@@ -209,7 +286,7 @@ async def get_activity_heatmap(
     
     # Get weekly activity data
     weekly_activity = stats.get('weeklyActivity', []) if stats else []
-    activity_map = {activity['date']: activity['sessionsCount'] for activity in weekly_activity}
+    activity_map = {activity['date']: activity.get('activitiesCount', activity.get('sessionsCount', 0)) for activity in weekly_activity}
     
     # Get calories data from completed sessions for the date range
     today = datetime.now().date()
@@ -276,12 +353,12 @@ async def get_activity_heatmap(
 async def get_user_history(
     page: int = 1,
     limit: int = 20,
-    activity_type: Optional[str] = None,  # 'session', 'challenge', 'breakdown', or None for all
+    activity_type: Optional[str] = None,  # 'session', 'challenge', 'breakdown', 'all', or None for all
     user_id: str = Depends(get_current_user_id)
 ):
     """
-    Get unified user history combining sessions, challenges, and dance breakdowns
-    Each activity type has different metadata for frontend display
+    Get unified user history with section-based pagination
+    Supports filtering by activity type and proper pagination per section
     """
     try:
         db = Database.get_database()
@@ -290,8 +367,14 @@ async def get_user_history(
         # Initialize results
         all_activities = []
         
+        # Get total counts for each section
+        sessions_count = await db['dance_sessions'].count_documents({"userId": ObjectId(user_id)})
+        challenges_count = await db['challenge_submissions'].count_documents({"userId": user_id})
+        breakdowns_count = await db['dance_breakdowns'].count_documents({"userId": ObjectId(user_id), "success": True})
+        total_activities = sessions_count + challenges_count + breakdowns_count
+        
         # 1. Get Dance Sessions
-        if not activity_type or activity_type == 'session':
+        if not activity_type or activity_type in ['session', 'all']:
             sessions = await db['dance_sessions'].find(
                 {"userId": ObjectId(user_id)},
                 {
@@ -299,50 +382,54 @@ async def get_user_history(
                     "endTime": 1,
                     "durationMinutes": 1,
                     "caloriesBurned": 1,
-                    "videoUrl": 1,
-                    "thumbnailUrl": 1,
-                    "danceStyle": 1,
+                    "videoURL": 1,  # Correct field name
+                    "thumbnailURL": 1,  # Correct field name
+                    "style": 1,
                     "score": 1,
-                    "level": 1
+                    "sessionType": 1
                 }
-            ).sort("startTime", -1).skip(skip).limit(limit).to_list(length=limit)
+            ).sort("startTime", -1).skip(skip if activity_type == 'session' else 0).limit(limit if activity_type == 'session' else limit).to_list(length=limit)
             
             for session in sessions:
                 session['_id'] = str(session['_id'])
                 session['activityType'] = 'session'
-                session['activityTitle'] = f"{session.get('danceStyle', 'Dance')} Session"
+                session['activityTitle'] = 'Dance Session'
                 session['activitySubtitle'] = f"{session.get('durationMinutes', 0)} min • {session.get('caloriesBurned', 0)} cal"
                 session['timestamp'] = session.get('startTime')
-                session['previewImage'] = session.get('thumbnailUrl') or session.get('videoUrl', '')
+                session['previewImage'] = session.get('thumbnailURL') or session.get('videoURL', '')
                 
                 # Ensure userId is converted to string if it's an ObjectId
                 if 'userId' in session and isinstance(session['userId'], ObjectId):
                     session['userId'] = str(session['userId'])
                 
+                # Add video URLs to the response
+                session['videoUrl'] = session.get('videoURL', '')
+                session['thumbnailUrl'] = session.get('thumbnailURL', '')
+                
                 session['metadata'] = {
                     "duration": session.get('durationMinutes', 0),
                     "calories": session.get('caloriesBurned', 0),
-                    "style": session.get('danceStyle', 'Unknown'),
+                    "style": session.get('style', 'Unknown'),
                     "score": session.get('score', 0),
-                    "level": session.get('level', 1)
+                    "level": 1,
+                    "videoUrl": session.get('videoURL', ''),
+                    "thumbnailUrl": session.get('thumbnailURL', '')
                 }
                 all_activities.append(session)
         
         # 2. Get Challenge Submissions
-        if not activity_type or activity_type == 'challenge':
+        if not activity_type or activity_type in ['challenge', 'all']:
             challenges = await db['challenge_submissions'].find(
                 {"userId": user_id},  # Challenge submissions store userId as string, not ObjectId
                 {
                     "challengeId": 1,
-                    "videoUrl": 1,
-                    "thumbnailUrl": 1,
-                    "score": 1,
+                    "video": 1,  # New nested video structure
+                    "analysis": 1,
                     "timestamps": 1,
-                    "durationMinutes": 1,
-                    "caloriesBurned": 1,
-                    "challenge": 1  # Will be populated via lookup
+                    "metadata": 1,
+                    "userProfile": 1
                 }
-            ).sort("timestamps.submittedAt", -1).skip(skip).limit(limit).to_list(length=limit)
+            ).sort("timestamps.submittedAt", -1).skip(skip if activity_type == 'challenge' else 0).limit(limit if activity_type == 'challenge' else limit).to_list(length=limit)
             
             # Get challenge details for each submission
             for challenge_submission in challenges:
@@ -357,45 +444,60 @@ async def get_user_history(
                 challenge_submission['_id'] = str(challenge_submission['_id'])
                 challenge_submission['activityType'] = 'challenge'
                 challenge_submission['activityTitle'] = challenge_submission.get('challenge', {}).get('title', 'Challenge Submission')
-                challenge_submission['activitySubtitle'] = f"Score: {challenge_submission.get('score', 0)} • {challenge_submission.get('durationMinutes', 0)} min"
+                
+                # Extract video URL from nested video object
+                video_data = challenge_submission.get('video', {})
+                video_url = video_data.get('url', '')
+                thumbnail_url = video_data.get('thumbnail_url', '')
+                
+                # Get score from analysis
+                analysis = challenge_submission.get('analysis', {})
+                score = analysis.get('score', 0)
+                
+                challenge_submission['activitySubtitle'] = f"Score: {score} • {video_data.get('duration', 0)}s"
                 challenge_submission['timestamp'] = challenge_submission.get('timestamps', {}).get('submittedAt')
-                challenge_submission['previewImage'] = challenge_submission.get('thumbnailUrl') or challenge_submission.get('videoUrl', '')
+                challenge_submission['previewImage'] = thumbnail_url or video_url
                 
                 # Ensure challengeId is also converted to string
                 if 'challengeId' in challenge_submission:
                     challenge_submission['challengeId'] = str(challenge_submission['challengeId'])
                 
+                # Add video URLs to the response
+                challenge_submission['videoUrl'] = video_url
+                challenge_submission['thumbnailUrl'] = thumbnail_url
+                
                 challenge_submission['metadata'] = {
-                    "score": challenge_submission.get('score', 0),
-                    "duration": challenge_submission.get('durationMinutes', 0),
-                    "calories": challenge_submission.get('caloriesBurned', 0),
-                    "challengeTitle": challenge_submission.get('challenge', {}).get('title', ''),
-                    "challengeType": challenge_submission.get('challenge', {}).get('type', ''),
-                    "points": challenge_submission.get('challenge', {}).get('points', 0)
+                    "score": score,
+                    "duration": video_data.get('duration', 0),
+                    "calories": 0,  # Challenges don't track calories separately
+                    "challengeTitle": challenge_submission.get('challenge', {}).get('title', 'Challenge'),
+                    "challengeType": challenge_submission.get('challenge', {}).get('type', 'freestyle'),
+                    "points": challenge_submission.get('challenge', {}).get('points', 0),
+                    "videoUrl": video_url,
+                    "thumbnailUrl": thumbnail_url
                 }
                 all_activities.append(challenge_submission)
         
         # 3. Get Dance Breakdowns
-        if not activity_type or activity_type == 'breakdown':
+        if not activity_type or activity_type in ['breakdown', 'all']:
             breakdowns = await db['dance_breakdowns'].find(
-                {"userId": ObjectId(user_id)},
+                {"userId": ObjectId(user_id), "success": True},
                 {
                     "videoUrl": 1,
                     "playableVideoUrl": 1,
                     "title": 1,
                     "duration": 1,
-                    "totalSteps": 1,
                     "difficultyLevel": 1,
-                    "createdAt": 1,
-                    "success": 1
+                    "totalSteps": 1,
+                    "createdAt": 1
                 }
-            ).sort("createdAt", -1).skip(skip).limit(limit).to_list(length=limit)
+            ).sort("createdAt", -1).skip(skip if activity_type == 'breakdown' else 0).limit(limit if activity_type == 'breakdown' else limit).to_list(length=limit)
             
             for breakdown in breakdowns:
                 breakdown['_id'] = str(breakdown['_id'])
                 breakdown['activityType'] = 'breakdown'
-                breakdown['activityTitle'] = breakdown.get('title', 'Dance Breakdown')
-                breakdown['activitySubtitle'] = f"{breakdown.get('totalSteps', 0)} steps • {breakdown.get('difficultyLevel', 'Intermediate')}"
+                breakdown['activityTitle'] = breakdown.get('title', 'Dance Video Analysis')
+                breakdown['activitySubtitle'] = f"{breakdown.get('totalSteps', 0)} steps • {breakdown.get('difficultyLevel', 'Unknown')}"
                 breakdown['timestamp'] = breakdown.get('createdAt')
                 breakdown['previewImage'] = breakdown.get('playableVideoUrl') or breakdown.get('videoUrl', '')
                 
@@ -403,17 +505,20 @@ async def get_user_history(
                 if 'userId' in breakdown and isinstance(breakdown['userId'], ObjectId):
                     breakdown['userId'] = str(breakdown['userId'])
                 
+                # Add video URLs to the response
+                breakdown['videoUrl'] = breakdown.get('videoUrl', '')
+                breakdown['playableVideoUrl'] = breakdown.get('playableVideoUrl', '')
+                
                 breakdown['metadata'] = {
                     "totalSteps": breakdown.get('totalSteps', 0),
                     "duration": breakdown.get('duration', 0),
-                    "difficulty": breakdown.get('difficultyLevel', 'Intermediate'),
+                    "difficulty": breakdown.get('difficultyLevel', 'Unknown'),
                     "originalUrl": breakdown.get('videoUrl', ''),
                     "playableUrl": breakdown.get('playableVideoUrl', '')
                 }
                 all_activities.append(breakdown)
         
-        # Sort all activities by timestamp (most recent first)
-        # Handle None timestamps by using datetime.min as fallback
+        # Sort all activities by timestamp (newest first)
         def safe_timestamp(activity):
             timestamp = activity.get('timestamp')
             if timestamp is None:
@@ -422,30 +527,63 @@ async def get_user_history(
         
         all_activities.sort(key=safe_timestamp, reverse=True)
         
-        # Apply pagination to combined results
-        start_idx = skip
-        end_idx = start_idx + limit
-        paginated_activities = all_activities[start_idx:end_idx]
+        # Apply pagination for 'all' type
+        if activity_type == 'all':
+            start_idx = skip
+            end_idx = start_idx + limit
+            all_activities = all_activities[start_idx:end_idx]
         
-        # Get total counts for each activity type
-        total_sessions = await db['dance_sessions'].count_documents({"userId": ObjectId(user_id)})
-        total_challenges = await db['challenge_submissions'].count_documents({"userId": user_id})  # Challenge submissions store userId as string
-        total_breakdowns = await db['dance_breakdowns'].count_documents({"userId": ObjectId(user_id)})
+        # Calculate pagination info
+        total_count = {
+            'all': total_activities,
+            'session': sessions_count,
+            'challenge': challenges_count,
+            'breakdown': breakdowns_count
+        }
+        
+        current_count = len(all_activities)
+        has_more = current_count == limit and (skip + limit) < total_count.get(activity_type or 'all', 0)
         
         return {
-            "activities": paginated_activities,
-            "total": len(all_activities),
+            "activities": all_activities,
+            "total": total_count.get(activity_type or 'all', 0),
             "page": page,
             "limit": limit,
-            "hasMore": len(all_activities) > (page * limit),
+            "hasMore": has_more,
             "summary": {
-                "sessions": total_sessions,
-                "challenges": total_challenges,
-                "breakdowns": total_breakdowns,
-                "total": total_sessions + total_challenges + total_breakdowns
+                "sessions": sessions_count,
+                "challenges": challenges_count,
+                "breakdowns": breakdowns_count,
+                "total": total_activities
             }
         }
         
     except Exception as e:
-        logger.error(f"❌ Failed to get user history: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get user history: {str(e)}") 
+        logger.error(f"❌ Error in get_user_history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user history") 
+
+@user_router.get('/api/user/activity-counts', response_model=Dict)
+async def get_activity_counts(user_id: str = Depends(get_current_user_id)):
+    """
+    Get activity counts for each section (for summary cards)
+    Returns counts for All, Activities, Breakdowns, Challenges
+    """
+    try:
+        db = Database.get_database()
+        
+        # Get counts for each section
+        sessions_count = await db['dance_sessions'].count_documents({"userId": ObjectId(user_id)})
+        challenges_count = await db['challenge_submissions'].count_documents({"userId": user_id})
+        breakdowns_count = await db['dance_breakdowns'].count_documents({"userId": ObjectId(user_id), "success": True})
+        total_activities = sessions_count + challenges_count + breakdowns_count
+        
+        return {
+            "all": total_activities,
+            "activities": sessions_count,  # Sessions are considered "activities"
+            "breakdowns": breakdowns_count,
+            "challenges": challenges_count
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error in get_activity_counts: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch activity counts") 

@@ -397,6 +397,11 @@ class DanceBreakdownService:
             
             # Update user stats for breakdown
             if response.success:
+                # Update user stats and streaks using unified function
+                from services.user.service import update_user_streaks_and_activity_unified
+                await update_user_streaks_and_activity_unified(db, user_id, "breakdown")
+                
+                # Update breakdown-specific stats
                 await self._update_user_stats_from_breakdown(db, user_id, response)
             
             logger.info(f"✅ Breakdown saved to database with ID: {breakdown_id}")

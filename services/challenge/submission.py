@@ -59,7 +59,6 @@ class SubmissionResponse(BaseModel):
     id: str = Field(..., alias="_id")
     userId: str
     challengeId: str
-    sessionId: str
     totalScore: Optional[int] = None
     scoreBreakdown: Optional[Dict[str, int]] = None
     badgeAwarded: Optional[str] = None
@@ -128,47 +127,11 @@ class SubmissionService:
                 submission_request.video_file, user_id, challenge_id, submission_request.video_duration_seconds
             )
             
-            # Create session first
+            # Create submission directly without creating a session
             now = datetime.utcnow()
-            session_doc = {
-                "userId": ObjectId(user_id),
-                "startTime": now,
-                "endTime": now,
-                "status": "completed",
-                "durationMinutes": int(video_data.duration / 60) if video_data.duration else 1,  # Convert seconds to minutes
-                "caloriesBurned": 0,
-                "style": "freestyle",
-                "sessionType": "challenge",
-                "videoURL": video_data.url,
-                "videoFileKey": video_data.file_key,
-                "thumbnailURL": None,
-                "thumbnailFileKey": None,
-                "location": submission_request.metadata.location,
-                "highlightText": submission_request.metadata.highlightText,
-                "tags": submission_request.metadata.tags or [],
-                "score": None,
-                "stars": None,
-                "rating": None,
-                "isPublic": submission_request.metadata.isPublic,
-                "sharedToFeed": submission_request.metadata.sharedToFeed,
-                "remixable": False,
-                "promptUsed": None,
-                "inspirationSessionId": None,
-                "challengeId": challenge_id,
-                "challengeSubmissionId": None,  # Will be set after submission creation
-                "createdAt": now,
-                "updatedAt": now
-            }
-            
-            # Insert session
-            session_result = await db['dance_sessions'].insert_one(session_doc)
-            session_id = str(session_result.inserted_id)
-            
-            # Create submission with new unified structure
             submission_doc = {
                 "userId": user_id,
                 "challengeId": challenge_id,
-                "sessionId": session_id,
                 "video": video_data.dict(),
                 "analysis": {
                     "status": "pending",
@@ -193,17 +156,6 @@ class SubmissionService:
             submission_result = await db['challenge_submissions'].insert_one(submission_doc)
             submission_id = str(submission_result.inserted_id)
             
-            # Update session with submission link
-            await db['dance_sessions'].update_one(
-                {"_id": session_result.inserted_id},
-                {
-                    "$set": {
-                        "challengeSubmissionId": submission_id,
-                        "updatedAt": now
-                    }
-                }
-            )
-            
             # Update challenge submission count
             await db['challenges'].update_one(
                 {"_id": ObjectId(challenge_id)},
@@ -213,6 +165,10 @@ class SubmissionService:
                 }
             )
             
+            # Update user stats and streaks using unified function
+            from services.user.service import update_user_streaks_and_activity_unified
+            await update_user_streaks_and_activity_unified(db, user_id, "challenge")
+            
             # Update user stats for challenge submission
             await self._update_user_stats_from_challenge(db, user_id, video_data, challenge)
             
@@ -220,7 +176,7 @@ class SubmissionService:
             analysis_completed = False
             try:
                 # Run AI analysis synchronously for unified submission
-                analysis_result = await self._run_ai_analysis_sync(submission_id, session_doc, challenge)
+                analysis_result = await self._run_ai_analysis_sync(submission_id, submission_doc, challenge)
                 if analysis_result:
                     # Update submission with analysis results
                     await self._update_submission_with_analysis(submission_id, analysis_result)
@@ -635,35 +591,37 @@ class SubmissionService:
             logger.warning(f"Error extracting video duration from bytes: {e}")
             return 60  # Default fallback
 
-    async def _run_ai_analysis_sync(self, submission_id: str, session: dict, challenge: dict):
+    async def _run_ai_analysis_sync(self, submission_id: str, submission: dict, challenge: dict):
         """Run AI analysis synchronously and return results"""
         try:
-            # Get video URL from session
-            video_url = session.get("videoURL")
+            # Get video URL from submission
+            video_url = submission.get('video', {}).get('url')
             if not video_url:
-                logger.warning(f"No video URL found for session {session.get('_id')}")
+                logger.warning(f"No video URL found for submission {submission.get('_id')}")
                 return None
-            
-            # Import AI service
-            from services.ai.pose_analysis import pose_analysis_service
-            from services.ai.models import AnalysisRequest
             
             # Create analysis request
             analysis_request = AnalysisRequest(
-                submission_id=submission_id,
+                submission_id=submission_id,  # ✅ Add the required submission_id
                 video_url=video_url,
                 challenge_type=challenge.get("type", "freestyle"),
                 target_bpm=None  # Could be extracted from challenge metadata
             )
             
-            # Run pose analysis synchronously
+            # Run pose analysis
             analysis_result = await pose_analysis_service.analyze_pose(analysis_request)
             
-            logger.info(f"✅ Synchronous AI analysis completed for submission {submission_id}")
-            return analysis_result
-            
+            if analysis_result:
+                # Update submission with analysis results
+                await self._update_submission_with_analysis(submission_id, analysis_result)
+                logger.info(f"✅ AI analysis completed for submission {submission_id}")
+                return analysis_result
+            else:
+                logger.warning(f"❌ AI analysis failed for submission {submission_id}")
+                return None
+                
         except Exception as e:
-            logger.error(f"❌ Error in synchronous AI analysis: {e}")
+            logger.error(f"❌ Error in AI analysis for submission {submission_id}: {str(e)}")
             return None
 
     async def _update_user_stats_from_challenge(self, db, user_id: str, video_data: VideoData, challenge: dict):
