@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Configure logger
+logger = logging.getLogger(__name__)
+
 JWT_SECRET = os.getenv("JWT_SECRET", "supersecretkey123")
 JWT_ALGORITHM = "HS256"
 
@@ -311,6 +314,11 @@ async def get_user_history(
                 session['activitySubtitle'] = f"{session.get('durationMinutes', 0)} min • {session.get('caloriesBurned', 0)} cal"
                 session['timestamp'] = session.get('startTime')
                 session['previewImage'] = session.get('thumbnailUrl') or session.get('videoUrl', '')
+                
+                # Ensure userId is converted to string if it's an ObjectId
+                if 'userId' in session and isinstance(session['userId'], ObjectId):
+                    session['userId'] = str(session['userId'])
+                
                 session['metadata'] = {
                     "duration": session.get('durationMinutes', 0),
                     "calories": session.get('caloriesBurned', 0),
@@ -323,7 +331,7 @@ async def get_user_history(
         # 2. Get Challenge Submissions
         if not activity_type or activity_type == 'challenge':
             challenges = await db['challenge_submissions'].find(
-                {"userId": ObjectId(user_id)},
+                {"userId": user_id},  # Challenge submissions store userId as string, not ObjectId
                 {
                     "challengeId": 1,
                     "videoUrl": 1,
@@ -342,6 +350,8 @@ async def get_user_history(
                 if challenge_id:
                     challenge = await db['challenges'].find_one({"_id": ObjectId(challenge_id)})
                     if challenge:
+                        # Convert ObjectId to string to avoid serialization issues
+                        challenge['_id'] = str(challenge['_id'])
                         challenge_submission['challenge'] = challenge
                 
                 challenge_submission['_id'] = str(challenge_submission['_id'])
@@ -350,6 +360,11 @@ async def get_user_history(
                 challenge_submission['activitySubtitle'] = f"Score: {challenge_submission.get('score', 0)} • {challenge_submission.get('durationMinutes', 0)} min"
                 challenge_submission['timestamp'] = challenge_submission.get('timestamps', {}).get('submittedAt')
                 challenge_submission['previewImage'] = challenge_submission.get('thumbnailUrl') or challenge_submission.get('videoUrl', '')
+                
+                # Ensure challengeId is also converted to string
+                if 'challengeId' in challenge_submission:
+                    challenge_submission['challengeId'] = str(challenge_submission['challengeId'])
+                
                 challenge_submission['metadata'] = {
                     "score": challenge_submission.get('score', 0),
                     "duration": challenge_submission.get('durationMinutes', 0),
@@ -383,6 +398,11 @@ async def get_user_history(
                 breakdown['activitySubtitle'] = f"{breakdown.get('totalSteps', 0)} steps • {breakdown.get('difficultyLevel', 'Intermediate')}"
                 breakdown['timestamp'] = breakdown.get('createdAt')
                 breakdown['previewImage'] = breakdown.get('playableVideoUrl') or breakdown.get('videoUrl', '')
+                
+                # Ensure userId is converted to string if it's an ObjectId
+                if 'userId' in breakdown and isinstance(breakdown['userId'], ObjectId):
+                    breakdown['userId'] = str(breakdown['userId'])
+                
                 breakdown['metadata'] = {
                     "totalSteps": breakdown.get('totalSteps', 0),
                     "duration": breakdown.get('duration', 0),
@@ -393,7 +413,14 @@ async def get_user_history(
                 all_activities.append(breakdown)
         
         # Sort all activities by timestamp (most recent first)
-        all_activities.sort(key=lambda x: x.get('timestamp', datetime.min), reverse=True)
+        # Handle None timestamps by using datetime.min as fallback
+        def safe_timestamp(activity):
+            timestamp = activity.get('timestamp')
+            if timestamp is None:
+                return datetime.min
+            return timestamp
+        
+        all_activities.sort(key=safe_timestamp, reverse=True)
         
         # Apply pagination to combined results
         start_idx = skip
@@ -402,7 +429,7 @@ async def get_user_history(
         
         # Get total counts for each activity type
         total_sessions = await db['dance_sessions'].count_documents({"userId": ObjectId(user_id)})
-        total_challenges = await db['challenge_submissions'].count_documents({"userId": ObjectId(user_id)})
+        total_challenges = await db['challenge_submissions'].count_documents({"userId": user_id})  # Challenge submissions store userId as string
         total_breakdowns = await db['dance_breakdowns'].count_documents({"userId": ObjectId(user_id)})
         
         return {
