@@ -29,9 +29,11 @@ app.add_middleware(
         "http://127.0.0.1:8080",
         "http://localhost:8000",  # Backend port
         "http://127.0.0.1:8000",
-        # Add production domains when ready
-        # "https://yourdomain.com",
-        # "https://www.yourdomain.com",
+        # Production domains
+        "https://androidbuild.d27rf5148zvtld.amplifyapp.com",
+        "https://movesai.club",
+        "https://www.movesai.club",
+        # Add more production domains as needed
     ],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
