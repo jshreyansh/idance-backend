@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from services.s3.service import s3_service, generate_session_video_key, generate_thumbnail_key, generate_challenge_video_key
-from services.s3.models import VideoUploadRequest, VideoUploadResponse, ThumbnailUploadRequest, ThumbnailUploadResponse, ChallengeVideoUploadRequest, ChallengeVideoUploadResponse
+from services.s3.models import VideoUploadRequest, VideoUploadResponse, ThumbnailUploadRequest, ThumbnailUploadResponse, ChallengeVideoUploadRequest, ChallengeVideoUploadResponse, DanceBreakdownVideoUploadRequest, DanceBreakdownVideoUploadResponse
 from services.user.service import get_current_user_id
 from infra.mongo import Database
 from bson import ObjectId
@@ -176,4 +176,58 @@ async def get_file_url(
         download_url = s3_service.generate_presigned_download_url(file_key)
         return {"download_url": download_url}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate download URL: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Failed to generate download URL: {str(e)}")
+
+@s3_router.post('/api/s3/upload/dance-breakdown-video', response_model=DanceBreakdownVideoUploadResponse)
+async def get_dance_breakdown_video_upload_url(
+    request: DanceBreakdownVideoUploadRequest = Body(...),
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Get a presigned URL for uploading a video for dance breakdown analysis
+    """
+    # Generate unique breakdown ID for tracking
+    breakdown_id = str(ObjectId())
+    
+    # Generate unique file key for the dance breakdown video
+    file_key = f"dance-breakdowns/{user_id}/{breakdown_id}/original_video.{request.file_extension}"
+    
+    # Generate presigned upload URL
+    upload_data = s3_service.generate_presigned_upload_url(
+        file_key=file_key,
+        content_type=request.content_type
+    )
+    
+    # Get the final file URL
+    file_url = s3_service.get_file_url(file_key)
+    
+    return DanceBreakdownVideoUploadResponse(
+        upload_url=upload_data['upload_url'],
+        file_key=upload_data['file_key'],
+        content_type=upload_data['content_type'],
+        expires_in=upload_data['expires_in'],
+        file_url=file_url,
+        breakdown_id=breakdown_id
+    )
+
+@s3_router.post('/api/s3/debug-upload')
+async def debug_upload(
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Debug endpoint to test file upload directly
+    """
+    # Generate a test file key
+    test_file_key = f"debug/{user_id}/test_upload.mp4"
+    
+    # Generate presigned upload URL
+    upload_data = s3_service.generate_presigned_upload_url(
+        file_key=test_file_key,
+        content_type="video/mp4"
+    )
+    
+    return {
+        "upload_url": upload_data['upload_url'],
+        "file_key": test_file_key,
+        "message": "Use this URL to test direct file upload"
+    } 

@@ -198,8 +198,8 @@ Authorization: Bearer <access_token>
 
 ## 🎬 Dance Breakdown System
 
-### **POST /api/ai/dance-breakdown**
-**Description:** Create step-by-step dance breakdown from YouTube/Instagram URL  
+### **POST /api/s3/upload/dance-breakdown-video**
+**Description:** Get presigned URL for uploading video for dance breakdown analysis  
 **Authentication:** Required  
 
 **Headers:**
@@ -210,7 +210,47 @@ Authorization: Bearer <access_token>
 **Request Body:**
 ```json
 {
+    "file_extension": "mp4",
+    "content_type": "video/mp4",
+    "file_size_mb": 25.5,
+    "original_filename": "my_dance_video.mp4"
+}
+```
+
+**Response:**
+```json
+{
+    "upload_url": "https://s3.amazonaws.com/presigned-upload-url",
+    "file_key": "dance-breakdowns/user123/breakdown456/original_video.mp4",
+    "content_type": "video/mp4",
+    "expires_in": 3600,
+    "file_url": "https://bucket.s3.region.amazonaws.com/dance-breakdowns/user123/breakdown456/original_video.mp4",
+    "breakdown_id": "breakdown456"
+}
+```
+
+### **POST /api/ai/dance-breakdown**
+**Description:** Create step-by-step dance breakdown from YouTube/Instagram URL or uploaded video  
+**Authentication:** Required  
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Request Body (URL):**
+```json
+{
     "video_url": "https://www.youtube.com/watch?v=example",
+    "mode": "auto",
+    "target_difficulty": "beginner"
+}
+```
+
+**Request Body (Uploaded Video):**
+```json
+{
+    "video_url": "https://bucket.s3.region.amazonaws.com/dance-breakdowns/user123/breakdown456/original_video.mp4",
     "mode": "auto",
     "target_difficulty": "beginner"
 }

@@ -281,6 +281,85 @@ class DanceBreakdownService:
             logger.error(f"❌ Failed to upload video to S3: {str(e)}")
             # Return original URL as fallback
             return original_url
+
+    async def download_from_s3(self, s3_url: str) -> str:
+        """Download video from S3 to temporary file"""
+        try:
+            logger.info(f"📥 Downloading video from S3: {s3_url}")
+            
+            # Extract file key from S3 URL
+            file_key = self._extract_file_key_from_url(s3_url)
+            logger.info(f"📁 Extracted file key: {file_key}")
+            
+            # Download to temporary file
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+            temp_path = temp_file.name
+            temp_file.close()
+            
+            # Use boto3 to download
+            import boto3
+            s3_client = boto3.client('s3')
+            bucket_name = os.getenv('S3_BUCKET_NAME')
+            
+            if not bucket_name:
+                raise Exception("S3_BUCKET_NAME environment variable not set")
+            
+            logger.info(f"📦 Downloading from bucket: {bucket_name}, key: {file_key}")
+            s3_client.download_file(bucket_name, file_key, temp_path)
+            
+            logger.info(f"✅ Successfully downloaded video from S3: {s3_url} -> {temp_path}")
+            
+            # Validate that the downloaded file is actually a video
+            file_size = os.path.getsize(temp_path)
+            logger.info(f"📁 Downloaded file size: {file_size} bytes")
+            
+            if file_size < 1000:  # Less than 1KB is suspicious
+                raise Exception(f"Downloaded file is too small ({file_size} bytes) - likely not a valid video file")
+            
+            # Try to get video info using ffprobe
+            try:
+                cmd = ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', temp_path]
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                video_info = result.stdout
+                logger.info(f"✅ Video file validation successful: {temp_path}")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"❌ Downloaded file is not a valid video: {e.stderr}")
+                raise Exception(f"Downloaded file is not a valid video file: {e.stderr}")
+            
+            return temp_path
+            
+        except Exception as e:
+            logger.error(f"❌ Error downloading from S3: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to download video from S3: {str(e)}")
+
+    def _extract_file_key_from_url(self, s3_url: str) -> str:
+        """Extract S3 file key from URL"""
+        try:
+            # Parse URL and extract path
+            from urllib.parse import urlparse
+            parsed = urlparse(s3_url)
+            file_key = parsed.path.lstrip('/')
+            
+            # Remove bucket name if it's in the path
+            bucket_name = os.getenv('S3_BUCKET_NAME', '')
+            if bucket_name and file_key.startswith(bucket_name + '/'):
+                file_key = file_key[len(bucket_name) + 1:]
+            
+            logger.info(f"🔍 Extracted file key: {file_key} from URL: {s3_url}")
+            return file_key
+            
+        except Exception as e:
+            logger.error(f"❌ Error extracting file key from URL: {str(e)}")
+            raise HTTPException(status_code=400, detail="Invalid S3 URL format")
+
+    def _get_cookies_path(self, url: str) -> Optional[str]:
+        """Determine the appropriate cookies file path based on URL."""
+        if "instagram.com" in url:
+            return 'cookies_instagram.txt'
+        elif "youtube.com" in url or "youtu.be" in url:
+            return 'cookies_youtube.txt'
+        else:
+            return None
     
     def _get_db(self):
         """Get database connection"""
@@ -554,15 +633,55 @@ class DanceBreakdownService:
     def extract_audio(self, video_path: str) -> str:
         """Extract audio from video file to WAV format"""
         wav_path = tempfile.mktemp(suffix=".wav")
-        subprocess.run([
-            "ffmpeg", "-y",
-            "-i", video_path,
-            "-vn",  # No video
-            "-ac", "1",  # Mono
-            "-ar", "44100",  # Sample rate
-            wav_path
-        ], check=True, capture_output=True)
-        return wav_path
+        
+        try:
+            # First, let's check if the video file exists and is readable
+            if not os.path.exists(video_path):
+                raise Exception(f"Video file does not exist: {video_path}")
+            
+            # Get file size to check if it's not empty
+            file_size = os.path.getsize(video_path)
+            if file_size == 0:
+                raise Exception(f"Video file is empty: {video_path}")
+            
+            logger.info(f"🎵 Extracting audio from video: {video_path} (size: {file_size} bytes)")
+            
+            # Run ffmpeg with better error handling
+            result = subprocess.run([
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-vn",  # No video
+                "-ac", "1",  # Mono
+                "-ar", "44100",  # Sample rate
+                wav_path
+            ], capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                logger.error(f"❌ FFmpeg failed with return code {result.returncode}")
+                logger.error(f"❌ FFmpeg stderr: {result.stderr}")
+                logger.error(f"❌ FFmpeg stdout: {result.stdout}")
+                raise Exception(f"FFmpeg failed to extract audio: {result.stderr}")
+            
+            # Check if the output file was created and has content
+            if not os.path.exists(wav_path):
+                raise Exception("FFmpeg did not create output WAV file")
+            
+            wav_size = os.path.getsize(wav_path)
+            if wav_size == 0:
+                raise Exception("FFmpeg created empty WAV file")
+            
+            logger.info(f"✅ Audio extraction successful: {wav_path} (size: {wav_size} bytes)")
+            return wav_path
+            
+        except Exception as e:
+            logger.error(f"❌ Audio extraction failed: {str(e)}")
+            # Clean up the output file if it exists
+            if os.path.exists(wav_path):
+                try:
+                    os.remove(wav_path)
+                except:
+                    pass
+            raise
     
     def detect_bpm(self, wav_path: str) -> Optional[float]:
         """Detect BPM from audio file using librosa"""
@@ -988,38 +1107,22 @@ class DanceBreakdownService:
             return {"error": str(e)}
     
     async def process_dance_breakdown(self, request: DanceBreakdownRequest, user_id: str) -> DanceBreakdownResponse:
-        """Main method to process dance breakdown from URL"""
+        """Main method to process dance breakdown from URL or S3 file"""
         try:
-            logger.info(f"🎬 Starting dance breakdown for URL: {request.video_url}")
+            logger.info(f"🎬 Starting dance breakdown for user: {user_id}")
+            logger.info(f"🎬 Video URL: {request.video_url}")
             logger.info(f"🎬 Mode: {request.mode}")
             
-            # Determine cookies file based on URL
-            cookies_path = None
-            if "instagram.com" in request.video_url:
-                cookies_path = 'cookies_instagram.txt'
+            # Determine if it's a S3 URL or external URL
+            if request.video_url.startswith('https://') and ('s3.amazonaws.com' in request.video_url or 'amazonaws.com' in request.video_url):
+                # It's an S3 URL - download from S3
+                logger.info(f"🎬 Processing S3 video: {request.video_url}")
+                temp_video = await self.download_from_s3(request.video_url)
             else:
-                cookies_path = 'cookies_youtube.txt'
-            
-            # Check if cookies file exists and is valid
-            if cookies_path and os.path.exists(cookies_path):
-                try:
-                    # Test if cookies file is valid by reading first few lines
-                    with open(cookies_path, 'r') as f:
-                        first_line = f.readline().strip()
-                        if first_line.startswith('#') or first_line.startswith('.'):
-                            logger.info(f"Using cookies file: {cookies_path}")
-                        else:
-                            logger.warning(f"Invalid cookies file format: {cookies_path}")
-                            cookies_path = None
-                except Exception as e:
-                    logger.warning(f"Error reading cookies file: {str(e)}")
-                    cookies_path = None
-            else:
-                logger.info("No cookies file found, proceeding without authentication")
-                cookies_path = None
-            
-            # Download video
-            temp_video = await self.download_video(request.video_url, cookies_path)
+                # It's an external URL (YouTube/Instagram) - use existing logic
+                logger.info(f"🎬 Processing external URL: {request.video_url}")
+                cookies_path = self._get_cookies_path(request.video_url)
+                temp_video = await self.download_video(request.video_url, cookies_path)
             
             # Upload video to S3 for client playback
             playable_video_url = await self.upload_video_to_s3(temp_video, user_id, request.video_url)
@@ -1029,9 +1132,18 @@ class DanceBreakdownService:
             bpm = None
             
             try:
-                # Extract audio and detect BPM
-                wav_path = self.extract_audio(temp_video)
-                bpm = self.detect_bpm(wav_path)
+                # Extract audio and detect BPM (optional - can proceed without it)
+                wav_path = None
+                bpm = None
+                
+                try:
+                    wav_path = self.extract_audio(temp_video)
+                    bpm = self.detect_bpm(wav_path)
+                    logger.info(f"🎵 BPM detected: {bpm}")
+                except Exception as audio_error:
+                    logger.warning(f"⚠️ Audio extraction/BPM detection failed: {str(audio_error)}")
+                    logger.warning(f"⚠️ Proceeding without audio analysis")
+                    # Continue without BPM - it's optional
                 
                 # Extract pose keypoints
                 pose_keypoints = self.extract_pose_keypoints(temp_video, fps=15)
