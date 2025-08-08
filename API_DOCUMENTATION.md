@@ -11,16 +11,17 @@
 
 1. [Authentication](#authentication)
 2. [User Management](#user-management)
-3. [Session Management](#session-management)
-4. [Challenge System](#challenge-system)
-5. [Challenge Submissions](#challenge-submissions)
-6. [AI & Scoring Engine](#ai--scoring-engine)
-7. [Dance Breakdown System](#dance-breakdown-system)
-8. [Real Video Analysis Features](#-real-video-analysis-features)
-9. [Background Jobs](#background-jobs)
-10. [S3 File Management](#s3-file-management)
-11. [Feed System](#feed-system)
-12. [Health Checks](#health-checks)
+3. [User Statistics](#user-statistics)
+4. [Session Management](#session-management)
+5. [Challenge System](#challenge-system)
+6. [Challenge Submissions](#challenge-submissions)
+7. [AI & Scoring Engine](#ai--scoring-engine)
+8. [Dance Breakdown System](#dance-breakdown-system)
+9. [Real Video Analysis Features](#-real-video-analysis-features)
+10. [Background Jobs](#background-jobs)
+11. [S3 File Management](#s3-file-management)
+12. [Feed System](#feed-system)
+13. [Health Checks](#health-checks)
 
 ---
 
@@ -100,6 +101,97 @@ Authorization: Bearer <access_token>
         "avatarUrl": "https://example.com/new-avatar.jpg"
     }
 }
+```
+
+---
+
+## 📊 User Statistics
+
+### **GET /api/stats/me**
+**Description:** Get comprehensive user statistics including activity counts, fitness metrics, and engagement data  
+**Authentication:** Required  
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+    "totalActivities": 45,
+    "totalSessions": 20,
+    "totalChallenges": 15,
+    "totalBreakdowns": 10,
+    "totalKcal": 2500,
+    "totalTimeMinutes": 180,
+    "totalSteps": 5000,
+    "currentStreakDays": 7,
+    "maxStreakDays": 15,
+    "lastActiveDate": "2025-01-25",
+    "level": 5,
+    "starsEarned": 150,
+    "rating": 85,
+    "mostPlayedStyle": "hip hop",
+    "trophies": ["first_place", "streak_master"],
+    "weeklyActivity": [
+        {
+            "date": "2025-01-25",
+            "sessionsCount": 3
+        },
+        {
+            "date": "2025-01-24",
+            "sessionsCount": 2
+        }
+    ]
+}
+```
+
+### **POST /api/stats/update**
+**Description:** Update user statistics manually  
+**Authentication:** Required  
+
+**Request Body:**
+```json
+{
+    "kcal": 100,
+    "minutes": 15,
+    "steps": 500,
+    "stars": 5,
+    "style": "hip hop"
+}
+```
+
+**Response:**
+```json
+{
+    "message": "Stats updated"
+}
+```
+
+### **GET /api/stats/heatmap**
+**Description:** Get activity heatmap data for visualization  
+**Authentication:** Required  
+
+**Query Parameters:**
+- `days` (int): Number of days to include (default: 7)
+
+**Response:**
+```json
+[
+    {
+        "date": "2025-01-25",
+        "sessionsCount": 3,
+        "isActive": true,
+        "caloriesBurned": 150
+    },
+    {
+        "date": "2025-01-24",
+        "sessionsCount": 2,
+        "isActive": true,
+        "caloriesBurned": 100
+    }
+]
 ```
 
 ---

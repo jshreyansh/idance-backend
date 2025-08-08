@@ -714,7 +714,7 @@ class SubmissionService:
                         "$inc": {
                             "totalKcal": calories_burned,
                             "totalTimeMinutes": duration_minutes,
-                            "totalSessions": 1
+                            "totalChallenges": 1  # Track challenges separately
                         },
                         "$set": {
                             "updatedAt": datetime.utcnow(),
@@ -734,7 +734,7 @@ class SubmissionService:
                         "$inc": {
                             "totalKcal": calories_burned,
                             "totalTimeMinutes": duration_minutes,
-                            "totalSessions": 1
+                            "totalChallenges": 1  # Track challenges separately
                         },
                         "$set": {
                             "updatedAt": datetime.utcnow(),
@@ -754,7 +754,7 @@ class SubmissionService:
                         "$inc": {
                             "totalKcal": calories_burned,
                             "totalTimeMinutes": duration_minutes,
-                            "totalSessions": 1
+                            "totalChallenges": 1  # Track challenges separately
                         },
                         "$set": {
                             "updatedAt": datetime.utcnow(),

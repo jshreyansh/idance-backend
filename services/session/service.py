@@ -181,6 +181,11 @@ async def update_user_stats_from_session(db, user_id, session_data):
     session = await db['dance_sessions'].find_one({"_id": ObjectId(session_data.sessionId)})
     style = session.get('style', '') if session else ''
     
+    # Check if this session is part of a challenge submission
+    is_challenge_session = await db['challenge_submissions'].find_one({
+        "sessionId": session_data.sessionId
+    })
+    
     # Prepare stats update
     stats_update = {
         '$inc': {},
@@ -196,6 +201,12 @@ async def update_user_stats_from_session(db, user_id, session_data):
         stats_update['$inc']['totalTimeMinutes'] = session_data.durationMinutes
     if session_data.stars is not None:
         stats_update['$inc']['starsEarned'] = session_data.stars
+    
+    # Track sessions vs challenges separately
+    if is_challenge_session:
+        stats_update['$inc']['totalChallenges'] = 1
+    else:
+        stats_update['$inc']['totalSessions'] = 1
     
     # Handle mostPlayedStyle logic (simple version - can be improved later)
     if style:

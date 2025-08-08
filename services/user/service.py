@@ -80,10 +80,84 @@ stats_router = APIRouter()
 async def get_my_stats(user_id: str = Depends(get_current_user_id)):
     db = Database.get_database()
     stats = await db['user_stats'].find_one({'_id': ObjectId(user_id)})
+    
     if not stats:
-        return UserStatsResponse()
+        # Initialize with calculated values
+        total_activities = await calculate_total_activities(db, user_id)
+        
+        # Count individual activities
+        sessions_count = await db['dance_sessions'].count_documents({
+            "userId": ObjectId(user_id),
+            "status": "completed"
+        })
+        
+        challenges_count = await db['challenge_submissions'].count_documents({
+            "userId": user_id
+        })
+        
+        breakdowns_count = await db['dance_breakdowns'].count_documents({
+            "userId": ObjectId(user_id),
+            "success": True
+        })
+        
+        return UserStatsResponse(
+            totalActivities=total_activities,
+            totalSessions=sessions_count,
+            totalChallenges=challenges_count,
+            totalBreakdowns=breakdowns_count
+        )
+    
     stats.pop('_id', None)
+    
+    # Calculate current activity counts
+    total_activities = await calculate_total_activities(db, user_id)
+    sessions_count = await db['dance_sessions'].count_documents({
+        "userId": ObjectId(user_id),
+        "status": "completed"
+    })
+    challenges_count = await db['challenge_submissions'].count_documents({
+        "userId": user_id
+    })
+    breakdowns_count = await db['dance_breakdowns'].count_documents({
+        "userId": ObjectId(user_id),
+        "success": True
+    })
+    
+    # Update stats with calculated values
+    stats.update({
+        'totalActivities': total_activities,
+        'totalSessions': sessions_count,
+        'totalChallenges': challenges_count,
+        'totalBreakdowns': breakdowns_count
+    })
+    
     return UserStatsResponse(**stats)
+
+async def calculate_total_activities(db, user_id: str) -> int:
+    """Calculate total activities by summing sessions, challenges, and breakdowns"""
+    try:
+        # Count sessions
+        sessions_count = await db['dance_sessions'].count_documents({
+            "userId": ObjectId(user_id),
+            "status": "completed"
+        })
+        
+        # Count challenges
+        challenges_count = await db['challenge_submissions'].count_documents({
+            "userId": user_id
+        })
+        
+        # Count breakdowns
+        breakdowns_count = await db['dance_breakdowns'].count_documents({
+            "userId": ObjectId(user_id),
+            "success": True
+        })
+        
+        return sessions_count + challenges_count + breakdowns_count
+        
+    except Exception as e:
+        logging.error(f"Error calculating total activities: {e}")
+        return 0
 
 @stats_router.post('/api/stats/update')
 async def update_my_stats(
@@ -91,6 +165,10 @@ async def update_my_stats(
     user_id: str = Depends(get_current_user_id)
 ):
     db = Database.get_database()
+    
+    # Calculate total activities
+    total_activities = await calculate_total_activities(db, user_id)
+    
     update_dict = {
         '$inc': {
             'totalKcal': update.kcal,
@@ -101,7 +179,8 @@ async def update_my_stats(
         },
         '$set': {
             'updatedAt': datetime.utcnow(),
-            'mostPlayedStyle': update.style  # Optionally, improve this logic later
+            'mostPlayedStyle': update.style,  # Optionally, improve this logic later
+            'totalActivities': total_activities
         }
     }
     await db['user_stats'].update_one(

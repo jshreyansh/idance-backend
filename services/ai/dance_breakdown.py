@@ -16,7 +16,7 @@ import cv2
 import mediapipe as mp
 import ruptures as rpt
 from typing import List, Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from fastapi import HTTPException
@@ -289,7 +289,7 @@ class DanceBreakdownService:
         return self.db
     
     async def save_breakdown_to_db(self, user_id: str, request: DanceBreakdownRequest, response: DanceBreakdownResponse) -> str:
-        """Save dance breakdown to database"""
+        """Save dance breakdown to database and update user stats"""
         try:
             db = self._get_db()
             
@@ -316,12 +316,73 @@ class DanceBreakdownService:
             result = await db['dance_breakdowns'].insert_one(breakdown_doc)
             breakdown_id = str(result.inserted_id)
             
+            # Update user stats for breakdown
+            if response.success:
+                await self._update_user_stats_from_breakdown(db, user_id, response)
+            
             logger.info(f"✅ Breakdown saved to database with ID: {breakdown_id}")
             return breakdown_id
             
         except Exception as e:
             logger.error(f"❌ Failed to save breakdown to database: {str(e)}")
             raise
+    
+    async def _update_user_stats_from_breakdown(self, db, user_id: str, response: DanceBreakdownResponse):
+        """Update user stats based on successful dance breakdown"""
+        try:
+            # Calculate calories based on duration (similar to sessions)
+            duration_minutes = int(response.duration / 60) if response.duration > 0 else 1
+            calories_burned = int(duration_minutes * 4)  # Example: 4 calories per minute for analysis
+            
+            # Get current date for weekly activity
+            today = datetime.utcnow().strftime('%Y-%m-%d')
+            
+            # Get current user stats
+            user_stats = await db['user_stats'].find_one({'_id': ObjectId(user_id)}) or {}
+            weekly_activity = user_stats.get('weeklyActivity', [])
+            
+            # Update weekly activity for today
+            today_found = False
+            for activity in weekly_activity:
+                if activity['date'] == today:
+                    activity['sessionsCount'] += 1
+                    today_found = True
+                    break
+            
+            if not today_found:
+                weekly_activity.append({'date': today, 'sessionsCount': 1})
+            
+            # Keep only last 7 days
+            today_date = datetime.strptime(today, '%Y-%m-%d').date()
+            seven_days_ago = today_date - timedelta(days=6)
+            weekly_activity = [
+                activity for activity in weekly_activity 
+                if datetime.strptime(activity['date'], '%Y-%m-%d').date() >= seven_days_ago
+            ]
+            
+            # Update user stats
+            await db['user_stats'].update_one(
+                {"_id": ObjectId(user_id)},
+                {
+                    "$inc": {
+                        "totalKcal": calories_burned,
+                        "totalTimeMinutes": duration_minutes,
+                        "totalBreakdowns": 1
+                    },
+                    "$set": {
+                        "updatedAt": datetime.utcnow(),
+                        "mostPlayedStyle": "analysis",
+                        "weeklyActivity": weekly_activity
+                    }
+                },
+                upsert=True
+            )
+            
+            logger.info(f"✅ Updated user {user_id} stats for dance breakdown.")
+            
+        except Exception as e:
+            logger.error(f"❌ Error updating user stats from breakdown: {e}")
+            # Don't raise - we don't want to fail the breakdown if stats update fails
     
     async def get_user_breakdowns(self, user_id: str, limit: int = 20, skip: int = 0) -> List[Dict]:
         """Get user's dance breakdown history"""
@@ -514,6 +575,17 @@ class DanceBreakdownService:
         except Exception as e:
             logger.error(f"BPM detection failed: {str(e)}")
             return None
+    
+    def get_video_duration(self, video_path: str) -> float:
+        """Get video duration using ffprobe"""
+        try:
+            cmd = ['ffprobe', '-v', 'quiet', '-show_entries', 'format=duration', '-of', 'csv=p=0', video_path]
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            duration = float(result.stdout.strip())
+            return duration
+        except Exception as e:
+            logger.warning(f"Failed to get video duration: {str(e)}")
+            return 30.0  # Fallback to default duration
     
     def extract_pose_keypoints(self, video_path: str, fps: int = 15) -> List[Dict]:
         """Extract pose keypoints from video frames"""
@@ -967,10 +1039,14 @@ class DanceBreakdownService:
                 # Segment movements
                 segments = self.segment_movements(pose_keypoints, penalty=5, bpm=bpm)
                 
+                # Get actual video duration using ffprobe
+                video_duration = self.get_video_duration(temp_video)
+                logger.info(f"📹 Video duration: {video_duration:.2f} seconds")
+                
                 # If not enough segments, use BPM-based segmentation
-                min_steps = max(2, int(30 // 2))  # at least 1 step per 2 seconds
+                min_steps = max(2, int(video_duration // 2))  # at least 1 step per 2 seconds
                 if len(segments) < min_steps and bpm:
-                    segments = self.segment_by_bpm(30, bpm, beats_per_step=4)
+                    segments = self.segment_by_bpm(video_duration, bpm, beats_per_step=4)
                 
                 # Analyze all movements
                 analysis_result = await self.analyze_all_movements(segments, pose_keypoints, bpm, request.mode)
@@ -999,7 +1075,7 @@ class DanceBreakdownService:
                     video_url=request.video_url,  # Original URL
                     playable_video_url=playable_video_url,  # S3 URL for playback
                     title="Dance Video Analysis",
-                    duration=30.0,  # Default duration
+                    duration=video_duration,  # Actual video duration
                     bpm=bpm,
                     difficulty_level="Intermediate",
                     total_steps=len(dance_steps),

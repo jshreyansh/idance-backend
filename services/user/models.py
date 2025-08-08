@@ -36,10 +36,18 @@ class UserStatsUpdateRequest(BaseModel):
     style: str
 
 class UserStatsResponse(BaseModel):
+    # Activity Counts
+    totalActivities: int = 0  # Sum of all activities (sessions + challenges + breakdowns)
     totalSessions: int = 0
+    totalChallenges: int = 0
+    totalBreakdowns: int = 0
+    
+    # Fitness Metrics
     totalKcal: int = 0
     totalTimeMinutes: int = 0
     totalSteps: int = 0
+    
+    # Engagement Metrics
     currentStreakDays: int = 0
     maxStreakDays: int = 0
     lastActiveDate: Optional[str] = None
