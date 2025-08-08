@@ -186,6 +186,24 @@ async def get_dance_breakdown_video_upload_url(
     """
     Get a presigned URL for uploading a video for dance breakdown analysis
     """
+    # Validate file size if provided
+    if request.file_size_mb is not None:
+        # Maximum file size: 100MB for dance breakdown videos
+        max_size_mb = 100
+        if request.file_size_mb > max_size_mb:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"File size ({request.file_size_mb}MB) exceeds maximum allowed size ({max_size_mb}MB)"
+            )
+        
+        # Minimum file size: 0.1MB (100KB) to ensure it's not empty
+        min_size_mb = 0.1
+        if request.file_size_mb < min_size_mb:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File size ({request.file_size_mb}MB) is too small. Minimum size is {min_size_mb}MB"
+            )
+    
     # Generate unique breakdown ID for tracking
     breakdown_id = str(ObjectId())
     
@@ -208,26 +226,4 @@ async def get_dance_breakdown_video_upload_url(
         expires_in=upload_data['expires_in'],
         file_url=file_url,
         breakdown_id=breakdown_id
-    )
-
-@s3_router.post('/api/s3/debug-upload')
-async def debug_upload(
-    user_id: str = Depends(get_current_user_id)
-):
-    """
-    Debug endpoint to test file upload directly
-    """
-    # Generate a test file key
-    test_file_key = f"debug/{user_id}/test_upload.mp4"
-    
-    # Generate presigned upload URL
-    upload_data = s3_service.generate_presigned_upload_url(
-        file_key=test_file_key,
-        content_type="video/mp4"
-    )
-    
-    return {
-        "upload_url": upload_data['upload_url'],
-        "file_key": test_file_key,
-        "message": "Use this URL to test direct file upload"
-    } 
+    ) 

@@ -217,6 +217,11 @@ Authorization: Bearer <access_token>
 }
 ```
 
+**File Size Limits:**
+- **Maximum**: 100MB
+- **Minimum**: 0.1MB (100KB)
+- **Recommended**: 5-50MB for optimal processing
+
 **Response:**
 ```json
 {
