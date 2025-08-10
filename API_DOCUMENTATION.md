@@ -470,6 +470,27 @@ Authorization: Bearer <access_token>
 }
 ```
 
+### **POST /api/ai/dance-breakdowns/regenerate-thumbnails**
+**Description:** Regenerate thumbnails for existing dance breakdowns that don't have them  
+**Authentication:** Required  
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+    "message": "Thumbnail regeneration completed",
+    "result": {
+        "total_processed": 15,
+        "success_count": 12,
+        "failed_count": 3
+    }
+}
+```
+
 ---
 
 ## 🤖 AI & Scoring Engine

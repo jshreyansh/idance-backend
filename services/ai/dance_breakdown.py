@@ -281,7 +281,7 @@ class DanceBreakdownService:
             logger.error(f"❌ Failed to upload video to S3: {str(e)}")
             # Return original URL as fallback
             return original_url
-
+    
     async def download_from_s3(self, s3_url: str) -> str:
         """Download video from S3 to temporary file"""
         try:
@@ -367,7 +367,7 @@ class DanceBreakdownService:
             self.db = Database.get_database()
         return self.db
     
-    async def save_breakdown_to_db(self, user_id: str, request: DanceBreakdownRequest, response: DanceBreakdownResponse) -> str:
+    async def save_breakdown_to_db(self, user_id: str, request: DanceBreakdownRequest, response: DanceBreakdownResponse, thumbnail_url: str = "") -> str:
         """Save dance breakdown to database and update user stats"""
         try:
             db = self._get_db()
@@ -376,6 +376,7 @@ class DanceBreakdownService:
                 "userId": ObjectId(user_id),
                 "videoUrl": request.video_url,
                 "playableVideoUrl": response.playable_video_url,
+                "thumbnailUrl": thumbnail_url,  # Add thumbnail URL
                 "title": response.title,
                 "mode": request.mode,
                 "targetDifficulty": request.target_difficulty,
@@ -610,8 +611,12 @@ class DanceBreakdownService:
                 breakdown['_id'] = str(breakdown['_id'])
                 breakdown['id'] = breakdown['_id']  # Add id field for consistency
                 
-                # Generate thumbnail URL (you can implement thumbnail generation later)
-                breakdown['thumbnailUrl'] = breakdown.get('playableVideoUrl', '').replace('.mp4', '_thumb.jpg')
+                # Use actual thumbnail URL from database, or use default
+                thumbnail_url = breakdown.get('thumbnailUrl', '')
+                if not thumbnail_url:
+                    # Use default thumbnail if none exists
+                    thumbnail_url = self.get_default_thumbnail_url()
+                breakdown['thumbnailUrl'] = thumbnail_url
                 
                 # Format duration
                 if breakdown.get('duration'):
@@ -653,12 +658,12 @@ class DanceBreakdownService:
             
             # Run ffmpeg with better error handling
             result = subprocess.run([
-                "ffmpeg", "-y",
-                "-i", video_path,
-                "-vn",  # No video
-                "-ac", "1",  # Mono
-                "-ar", "44100",  # Sample rate
-                wav_path
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-vn",  # No video
+            "-ac", "1",  # Mono
+            "-ar", "44100",  # Sample rate
+            wav_path
             ], capture_output=True, text=True)
             
             if result.returncode != 0:
@@ -1132,15 +1137,15 @@ class DanceBreakdownService:
             # Upload video to S3 for client playback
             playable_video_url = await self.upload_video_to_s3(temp_video, user_id, request.video_url)
             
+            # Generate and upload thumbnail
+            thumbnail_url = await self.generate_and_upload_thumbnail(temp_video, user_id, request.video_url)
+            
             # Initialize variables
             wav_path = None
             bpm = None
             
             try:
                 # Extract audio and detect BPM (optional - can proceed without it)
-                wav_path = None
-                bpm = None
-                
                 try:
                     wav_path = self.extract_audio(temp_video)
                     bpm = self.detect_bpm(wav_path)
@@ -1204,7 +1209,7 @@ class DanceBreakdownService:
                 
                 # Save to database
                 try:
-                    breakdown_id = await self.save_breakdown_to_db(user_id, request, response)
+                    breakdown_id = await self.save_breakdown_to_db(user_id, request, response, thumbnail_url)
                     logger.info(f"💾 Breakdown saved with ID: {breakdown_id}")
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to save breakdown to database: {str(e)}")
@@ -1241,6 +1246,175 @@ class DanceBreakdownService:
                 mode=request.mode,
                 error_message=str(e)
             )
+
+    async def generate_and_upload_thumbnail(self, video_path: str, user_id: str, original_url: str) -> str:
+        """Generate thumbnail from video and upload to S3"""
+        try:
+            import boto3
+            from botocore.exceptions import ClientError
+            import hashlib
+            import os
+            import tempfile
+            
+            # Generate thumbnail using FFmpeg
+            thumbnail_path = await self._generate_thumbnail_from_video(video_path)
+            
+            if not thumbnail_path or not os.path.exists(thumbnail_path):
+                logger.warning(f"⚠️ Failed to generate thumbnail for video: {video_path}")
+                return ""
+            
+            # Initialize S3 client
+            s3_client = boto3.client(
+                's3',
+                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+                region_name=os.getenv('AWS_REGION', 'ap-south-1')
+            )
+            
+            # Generate unique file key for thumbnail
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            url_hash = hashlib.md5(original_url.encode()).hexdigest()[:8]
+            thumbnail_key = f"dance-breakdowns/{user_id}/{timestamp}_{url_hash}_thumb.jpg"
+            
+            # Upload thumbnail to S3
+            bucket_name = os.getenv('S3_BUCKET_NAME', 'idanceshreyansh')
+            s3_client.upload_file(thumbnail_path, bucket_name, thumbnail_key)
+            
+            # Generate public URL
+            bucket_url = os.getenv('S3_BUCKET_URL', f'https://{bucket_name}.s3.ap-south-1.amazonaws.com')
+            thumbnail_url = f"{bucket_url}/{thumbnail_key}"
+            
+            # Clean up temporary thumbnail file
+            try:
+                os.remove(thumbnail_path)
+            except:
+                pass
+            
+            logger.info(f"✅ Thumbnail uploaded to S3: {thumbnail_url}")
+            return thumbnail_url
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to generate/upload thumbnail: {str(e)}")
+            return ""
+    
+    async def _generate_thumbnail_from_video(self, video_path: str) -> Optional[str]:
+        """Generate thumbnail from video using FFmpeg"""
+        try:
+            import tempfile
+            import subprocess
+            
+            # Get video duration to extract frame from middle
+            duration = self.get_video_duration(video_path)
+            if duration <= 0:
+                logger.warning(f"⚠️ Invalid video duration: {duration}")
+                return None
+            
+            # Extract frame from middle of video (at 50% of duration)
+            timestamp = duration / 2
+            
+            # Create temporary file for thumbnail
+            thumbnail_path = tempfile.mktemp(suffix=".jpg")
+            
+            # Use FFmpeg to extract frame
+            result = subprocess.run([
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-ss", str(timestamp),
+                "-vframes", "1",
+                "-q:v", "2",  # High quality
+                "-vf", "scale=480:270",  # 16:9 aspect ratio, reasonable size
+                thumbnail_path
+            ], capture_output=True, text=True)
+            
+            if result.returncode != 0:
+                logger.error(f"❌ FFmpeg thumbnail generation failed: {result.stderr}")
+                return None
+            
+            # Check if thumbnail was created
+            if not os.path.exists(thumbnail_path):
+                logger.error("❌ FFmpeg did not create thumbnail file")
+                return None
+            
+            thumbnail_size = os.path.getsize(thumbnail_path)
+            if thumbnail_size == 0:
+                logger.error("❌ FFmpeg created empty thumbnail file")
+                return None
+            
+            logger.info(f"✅ Thumbnail generated: {thumbnail_path} (size: {thumbnail_size} bytes)")
+            return thumbnail_path
+            
+        except Exception as e:
+            logger.error(f"❌ Thumbnail generation failed: {str(e)}")
+            return None
+
+    async def regenerate_missing_thumbnails(self) -> Dict[str, int]:
+        """Regenerate thumbnails for breakdowns that don't have them"""
+        try:
+            db = self._get_db()
+            
+            # Find breakdowns without thumbnails
+            breakdowns_without_thumbnails = await db['dance_breakdowns'].find({
+                "$or": [
+                    {"thumbnailUrl": {"$exists": False}},
+                    {"thumbnailUrl": ""},
+                    {"thumbnailUrl": None}
+                ],
+                "playableVideoUrl": {"$exists": True, "$ne": ""}
+            }).to_list(length=None)
+            
+            logger.info(f"🔍 Found {len(breakdowns_without_thumbnails)} breakdowns without thumbnails")
+            
+            success_count = 0
+            failed_count = 0
+            
+            for breakdown in breakdowns_without_thumbnails:
+                try:
+                    # Download video from S3
+                    video_path = await self.download_from_s3(breakdown['playableVideoUrl'])
+                    
+                    # Generate thumbnail
+                    thumbnail_url = await self.generate_and_upload_thumbnail(
+                        video_path, 
+                        str(breakdown['userId']), 
+                        breakdown['videoUrl']
+                    )
+                    
+                    if thumbnail_url:
+                        # Update database with thumbnail URL
+                        await db['dance_breakdowns'].update_one(
+                            {"_id": breakdown['_id']},
+                            {"$set": {"thumbnailUrl": thumbnail_url}}
+                        )
+                        success_count += 1
+                        logger.info(f"✅ Regenerated thumbnail for breakdown {breakdown['_id']}")
+                    else:
+                        failed_count += 1
+                        logger.warning(f"⚠️ Failed to generate thumbnail for breakdown {breakdown['_id']}")
+                    
+                    # Clean up temporary video file
+                    try:
+                        os.remove(video_path)
+                    except:
+                        pass
+                        
+                except Exception as e:
+                    failed_count += 1
+                    logger.error(f"❌ Error regenerating thumbnail for breakdown {breakdown['_id']}: {str(e)}")
+            
+            return {
+                "total_processed": len(breakdowns_without_thumbnails),
+                "success_count": success_count,
+                "failed_count": failed_count
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to regenerate missing thumbnails: {str(e)}")
+            raise
+    
+    def get_default_thumbnail_url(self) -> str:
+        """Get a default thumbnail URL for fallback"""
+        # You can replace this with a static image URL from your S3 bucket
+        return "https://via.placeholder.com/480x270/cccccc/666666?text=No+Thumbnail"
 
 # Create service instance
 dance_breakdown_service = DanceBreakdownService() 

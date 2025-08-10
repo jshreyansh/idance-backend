@@ -207,3 +207,24 @@ async def get_breakdown_videos(
     except Exception as e:
         logger.error(f"❌ Error in get breakdown videos endpoint: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get breakdown videos: {str(e)}") 
+
+@ai_router.post('/api/ai/dance-breakdowns/regenerate-thumbnails')
+async def regenerate_missing_thumbnails(
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Regenerate thumbnails for existing dance breakdowns that don't have them
+    This is an admin/maintenance endpoint
+    """
+    try:
+        result = await dance_breakdown_service.regenerate_missing_thumbnails()
+        return {
+            "message": "Thumbnail regeneration completed",
+            "result": result
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Error in regenerate thumbnails endpoint: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to regenerate thumbnails: {str(e)}") 
