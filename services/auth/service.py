@@ -1,7 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from services.auth.models import SignupRequest, LoginRequest, GoogleSignInRequest
 from services.auth.utils import hash_password, verify_password, create_access_token
 from services.auth.google_utils import verify_google_token, fetch_google_profile_data
+from services.rate_limiting.decorators import auth_rate_limit, public_rate_limit
 from infra.mongo import Database
 from datetime import datetime
 from bson import ObjectId
@@ -10,9 +11,11 @@ from typing import Optional
 auth_router = APIRouter()
 
 @auth_router.post('/auth/signup')
-async def signup(data: SignupRequest):
+@auth_rate_limit('auth_signup')
+async def signup(request: Request, data: SignupRequest):
     db = Database.get_database()
-    if await db['users'].find_one({'auth.email': data.email}):
+    users_collection = Database.get_collection_name('users')
+    if await db[users_collection].find_one({'auth.email': data.email}):
         raise HTTPException(status_code=400, detail='Email already registered')
     hashed = hash_password(data.password)
     now = datetime.utcnow()
@@ -30,15 +33,17 @@ async def signup(data: SignupRequest):
         "lastLoginAt": now
         # All other fields can be added later
     }
-    result = await db['users'].insert_one(user_doc)
+    result = await db[users_collection].insert_one(user_doc)
     user_id = str(result.inserted_id)
     token = create_access_token({"user_id": user_id, "email": data.email})
     return {'message': 'Signup successful', 'user_id': user_id, 'access_token': token, 'token_type': 'bearer'}
 
 @auth_router.post('/auth/login')
-async def login(data: LoginRequest):
+@auth_rate_limit('auth_login')
+async def login(request: Request, data: LoginRequest):
     db = Database.get_database()
-    user = await db['users'].find_one({'auth.email': data.email})
+    users_collection = Database.get_collection_name('users')
+    user = await db[users_collection].find_one({'auth.email': data.email})
     if not user or not verify_password(data.password, user['auth']['passwordHash']):
         raise HTTPException(status_code=401, detail='Invalid credentials')
     user_id = str(user['_id'])
@@ -46,7 +51,8 @@ async def login(data: LoginRequest):
     return {"access_token": token, "token_type": "bearer", "user_id": user_id}
 
 @auth_router.post('/auth/google')
-async def google_sign_in(data: GoogleSignInRequest):
+@auth_rate_limit('auth_google')
+async def google_sign_in(request: Request, data: GoogleSignInRequest):
     """
     Handle Google Sign-In using ID token and access token
     """
@@ -65,7 +71,8 @@ async def google_sign_in(data: GoogleSignInRequest):
         profile_data = await fetch_google_profile_data(data.accessToken)
         
         # Check if user already exists
-        existing_user = await db['users'].find_one({
+        users_collection = Database.get_collection_name('users')
+        existing_user = await db[users_collection].find_one({
             '$or': [
                 {'auth.providerId': google_user_info['google_id']},
                 {'auth.email': google_user_info['email']}
@@ -105,7 +112,7 @@ async def google_sign_in(data: GoogleSignInRequest):
                 if profile_data.get('location'):
                     update_fields["profile.location"] = profile_data['location']
             
-            await db['users'].update_one(
+            await db[users_collection].update_one(
                 {"_id": existing_user['_id']},
                 {"$set": update_fields}
             )
@@ -136,7 +143,7 @@ async def google_sign_in(data: GoogleSignInRequest):
                 "updatedAt": now
             }
             
-            result = await db['users'].insert_one(user_doc)
+            result = await db[users_collection].insert_one(user_doc)
             user_id = str(result.inserted_id)
         
         # Generate JWT token
@@ -166,7 +173,8 @@ async def google_sign_in(data: GoogleSignInRequest):
         raise HTTPException(status_code=500, detail="Internal server error during Google sign-in")
 
 @auth_router.get('/auth/google/test')
-async def test_google_config():
+@public_rate_limit('health_check')
+async def test_google_config(request: Request):
     """
     Test endpoint to verify Google OAuth configuration
     """

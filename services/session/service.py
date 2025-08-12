@@ -5,6 +5,12 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 from services.user.service import get_current_user_id
 
+# Environment-aware collection names
+users_collection = Database.get_collection_name('users')
+dance_sessions_collection = Database.get_collection_name('dance_sessions')
+user_stats_collection = Database.get_collection_name('user_stats')
+session_likes_collection = Database.get_collection_name('session_likes')
+
 session_router = APIRouter()
 
 @session_router.get('/session/health')
@@ -21,7 +27,7 @@ async def start_session(
     today = now.strftime('%Y-%m-%d')
     
     # Fetch user info for denormalization
-    user = await db['users'].find_one({'_id': ObjectId(user_id)})
+    user = await db[users_collection].find_one({'_id': ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail='User not found')
     profile = user.get('profile', {})
@@ -33,7 +39,7 @@ async def start_session(
     }
     
     # Check if user already had a session today
-    existing_session_today = await db['dance_sessions'].find_one({
+    existing_session_today = await db[dance_sessions_collection].find_one({
         "userId": ObjectId(user_id),
         "startTime": {
             "$gte": datetime.strptime(today, '%Y-%m-%d'),
@@ -69,11 +75,11 @@ async def start_session(
     }
     # Remove None fields
     session_doc = {k: v for k, v in session_doc.items() if v is not None}
-    result = await db['dance_sessions'].insert_one(session_doc)
+    result = await db[dance_sessions_collection].insert_one(session_doc)
     return {"sessionId": str(result.inserted_id)}
 
 async def update_user_streaks_and_activity(db, user_id, today):
-    user_stats = await db['user_stats'].find_one({'_id': ObjectId(user_id)}) or {}
+    user_stats = await db[user_stats_collection].find_one({'_id': ObjectId(user_id)}) or {}
     
     last_active_date = user_stats.get('lastActiveDate')
     current_streak = user_stats.get('currentStreakDays', 0)
@@ -122,7 +128,7 @@ async def update_user_streaks_and_activity(db, user_id, today):
     ]
     
     # Update user stats
-    await db['user_stats'].update_one(
+    await db[user_stats_collection].update_one(
         {'_id': ObjectId(user_id)},
         {
             '$set': {
@@ -163,7 +169,7 @@ async def complete_session(
     }
     # Remove None fields
     update_fields = {k: v for k, v in update_fields.items() if v is not None}
-    result = await db['dance_sessions'].update_one(
+    result = await db[dance_sessions_collection].update_one(
         {"_id": ObjectId(session_id), "userId": ObjectId(user_id)},
         {"$set": update_fields}
     )
@@ -183,11 +189,12 @@ async def complete_session(
 async def update_user_stats_from_session(db, user_id, session_data):
     """Update user stats based on completed session data"""
     # Get current session to extract style for mostPlayedStyle logic
-    session = await db['dance_sessions'].find_one({"_id": ObjectId(session_data.sessionId)})
+    session = await db[dance_sessions_collection].find_one({"_id": ObjectId(session_data.sessionId)})
     style = session.get('style', '') if session else ''
     
     # Check if this session is part of a challenge submission
-    is_challenge_session = await db['challenge_submissions'].find_one({
+    challenge_submissions_collection = Database.get_collection_name('challenge_submissions')
+    is_challenge_session = await db[challenge_submissions_collection].find_one({
         "sessionId": session_data.sessionId
     })
     
@@ -219,7 +226,7 @@ async def update_user_stats_from_session(db, user_id, session_data):
     
     # Only update if there are incremental changes
     if stats_update['$inc']:
-        await db['user_stats'].update_one(
+        await db[user_stats_collection].update_one(
             {'_id': ObjectId(user_id)},
             stats_update,
             upsert=True
@@ -228,7 +235,7 @@ async def update_user_stats_from_session(db, user_id, session_data):
 @session_router.get('/api/sessions/me')
 async def get_my_sessions(user_id: str = Depends(get_current_user_id)):
     db = Database.get_database()
-    sessions = await db['dance_sessions'].find({"userId": ObjectId(user_id)}).sort("startTime", -1).to_list(100)
+    sessions = await db[dance_sessions_collection].find({"userId": ObjectId(user_id)}).sort("startTime", -1).to_list(100)
     for s in sessions:
         s['_id'] = str(s['_id'])
         s['userId'] = str(s['userId'])
@@ -242,10 +249,10 @@ async def get_public_feed(style: str = None, location: str = None, skip: int = 0
         query["style"] = style
     if location:
         query["location"] = location
-    sessions = await db['dance_sessions'].find(query).sort("createdAt", -1).skip(skip).limit(limit).to_list(length=limit)
+    sessions = await db[dance_sessions_collection].find(query).sort("createdAt", -1).skip(skip).limit(limit).to_list(length=limit)
     user_ids = list({s['userId'] for s in sessions})
     # Fetch all relevant users in one query
-    users = await db['users'].find({"_id": {"$in": [ObjectId(uid) for uid in user_ids]}}).to_list(len(user_ids))
+    users = await db[users_collection].find({"_id": {"$in": [ObjectId(uid) for uid in user_ids]}}).to_list(len(user_ids))
     user_map = {str(u['_id']): u for u in users}
     for s in sessions:
         s['_id'] = str(s['_id'])
@@ -276,15 +283,15 @@ async def like_session(
     session_obj_id = ObjectId(session_id)
     user_obj_id = ObjectId(user_id)
     # Check if already liked
-    existing = await db['session_likes'].find_one({"sessionId": session_obj_id, "userId": user_obj_id})
+    existing = await db[session_likes_collection].find_one({"sessionId": session_obj_id, "userId": user_obj_id})
     if existing:
         return {"message": "Already liked"}
-    await db['session_likes'].insert_one({
+    await db[session_likes_collection].insert_one({
         "sessionId": session_obj_id,
         "userId": user_obj_id,
         "createdAt": datetime.utcnow()
     })
-    await db['dance_sessions'].update_one({"_id": session_obj_id}, {"$inc": {"likesCount": 1}})
+    await db[dance_sessions_collection].update_one({"_id": session_obj_id}, {"$inc": {"likesCount": 1}})
     return {"message": "Session liked"}
 
 @session_router.post('/api/sessions/{session_id}/unlike')
@@ -295,9 +302,9 @@ async def unlike_session(
     db = Database.get_database()
     session_obj_id = ObjectId(session_id)
     user_obj_id = ObjectId(user_id)
-    result = await db['session_likes'].delete_one({"sessionId": session_obj_id, "userId": user_obj_id})
+    result = await db[session_likes_collection].delete_one({"sessionId": session_obj_id, "userId": user_obj_id})
     if result.deleted_count:
-        await db['dance_sessions'].update_one({"_id": session_obj_id}, {"$inc": {"likesCount": -1}})
+        await db[dance_sessions_collection].update_one({"_id": session_obj_id}, {"$inc": {"likesCount": -1}})
         return {"message": "Session unliked"}
     return {"message": "Session was not liked"}
 
@@ -309,9 +316,9 @@ async def get_session_likers(
 ):
     db = Database.get_database()
     session_obj_id = ObjectId(session_id)
-    likes = await db['session_likes'].find({"sessionId": session_obj_id}).skip(skip).limit(limit).to_list(length=limit)
+    likes = await db[session_likes_collection].find({"sessionId": session_obj_id}).skip(skip).limit(limit).to_list(length=limit)
     user_ids = [like['userId'] for like in likes]
-    users = await db['users'].find({"_id": {"$in": user_ids}}).to_list(len(user_ids))
+    users = await db[users_collection].find({"_id": {"$in": user_ids}}).to_list(len(user_ids))
     user_map = {u['_id']: u for u in users}
     result = []
     for like in likes:

@@ -1,6 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Header, Body
 from services.user.models import UserProfileUpdate, UserStatsUpdateRequest, UserStatsResponse
 from infra.mongo import Database
+# Environment-aware collection names
+users_collection = Database.get_collection_name('users')
+user_stats_collection = Database.get_collection_name('user_stats')
+challenges_collection = Database.get_collection_name('challenges')
+challenge_submissions_collection = Database.get_collection_name('challenge_submissions')
+dance_sessions_collection = Database.get_collection_name('dance_sessions')
+dance_breakdowns_collection = Database.get_collection_name('dance_breakdowns')
+
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from bson import ObjectId
@@ -40,13 +48,13 @@ async def user_health():
 @user_router.get('/user/list')
 async def list_users():
     db = Database.get_database()
-    users = await db['users'].find().to_list(100)
+    users = await db[users_collection].find().to_list(100)
     return users
 
 @user_router.post('/user/create')
 async def create_user(user: dict):
     db = Database.get_database()
-    result = await db['users'].insert_one(user)
+    result = await db[users_collection].insert_one(user)
     return {"inserted_id": str(result.inserted_id)}
 
 @user_router.patch("/user/profile")
@@ -59,10 +67,10 @@ async def update_profile(
     update_fields["updatedAt"] = datetime.utcnow()
     # Unique username validation
     if profile.username:
-        existing = await db["users"].find_one({"profile.username": profile.username, "_id": {"$ne": ObjectId(user_id)}})
+        existing = await db[users_collection].find_one({"profile.username": profile.username, "_id": {"$ne": ObjectId(user_id)}})
         if existing:
             raise HTTPException(status_code=409, detail="Username already taken")
-    result = await db["users"].update_one({"_id": ObjectId(user_id)}, {"$set": update_fields})
+    result = await db[users_collection].update_one({"_id": ObjectId(user_id)}, {"$set": update_fields})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="User not found")
     return {"status": "success"} 
@@ -70,7 +78,7 @@ async def update_profile(
 @user_router.get('/user/me')
 async def get_my_user_data(user_id: str = Depends(get_current_user_id)):
     db = Database.get_database()
-    user = await db['users'].find_one({'_id': ObjectId(user_id)})
+    user = await db[users_collection].find_one({'_id': ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail='User not found')
     user['_id'] = str(user['_id'])
@@ -82,23 +90,23 @@ stats_router = APIRouter()
 @stats_router.get('/api/stats/me', response_model=UserStatsResponse)
 async def get_my_stats(user_id: str = Depends(get_current_user_id)):
     db = Database.get_database()
-    stats = await db['user_stats'].find_one({'_id': ObjectId(user_id)})
+    stats = await db[user_stats_collection].find_one({'_id': ObjectId(user_id)})
     
     if not stats:
         # Initialize with calculated values
         total_activities = await calculate_total_activities(db, user_id)
         
         # Count individual activities
-        sessions_count = await db['dance_sessions'].count_documents({
+        sessions_count = await db[dance_sessions_collection].count_documents({
             "userId": ObjectId(user_id),
             "status": "completed"
         })
         
-        challenges_count = await db['challenge_submissions'].count_documents({
+        challenges_count = await db[challenge_submissions_collection].count_documents({
             "userId": user_id
         })
         
-        breakdowns_count = await db['dance_breakdowns'].count_documents({
+        breakdowns_count = await db[dance_breakdowns_collection].count_documents({
             "userId": ObjectId(user_id),
             "success": True
         })
@@ -114,14 +122,14 @@ async def get_my_stats(user_id: str = Depends(get_current_user_id)):
     
     # Calculate current activity counts
     total_activities = await calculate_total_activities(db, user_id)
-    sessions_count = await db['dance_sessions'].count_documents({
+    sessions_count = await db[dance_sessions_collection].count_documents({
         "userId": ObjectId(user_id),
         "status": "completed"
     })
-    challenges_count = await db['challenge_submissions'].count_documents({
+    challenges_count = await db[challenge_submissions_collection].count_documents({
         "userId": user_id
     })
-    breakdowns_count = await db['dance_breakdowns'].count_documents({
+    breakdowns_count = await db[dance_breakdowns_collection].count_documents({
         "userId": ObjectId(user_id),
         "success": True
     })
@@ -140,18 +148,18 @@ async def calculate_total_activities(db, user_id: str) -> int:
     """Calculate total activities by summing sessions, challenges, and breakdowns"""
     try:
         # Count sessions
-        sessions_count = await db['dance_sessions'].count_documents({
+        sessions_count = await db[dance_sessions_collection].count_documents({
             "userId": ObjectId(user_id),
             "status": "completed"
         })
         
         # Count challenges
-        challenges_count = await db['challenge_submissions'].count_documents({
+        challenges_count = await db[challenge_submissions_collection].count_documents({
             "userId": user_id
         })
         
         # Count breakdowns
-        breakdowns_count = await db['dance_breakdowns'].count_documents({
+        breakdowns_count = await db[dance_breakdowns_collection].count_documents({
             "userId": ObjectId(user_id),
             "success": True
         })
@@ -186,7 +194,7 @@ async def update_my_stats(
             'totalActivities': total_activities
         }
     }
-    await db['user_stats'].update_one(
+    await db[user_stats_collection].update_one(
         {'_id': ObjectId(user_id)},
         update_dict,
         upsert=True
@@ -199,7 +207,7 @@ async def update_user_streaks_and_activity_unified(db, user_id: str, activity_ty
     Called by sessions, challenges, and breakdowns
     """
     try:
-        user_stats = await db['user_stats'].find_one({'_id': ObjectId(user_id)}) or {}
+        user_stats = await db[user_stats_collection].find_one({'_id': ObjectId(user_id)}) or {}
         
         last_active_date = user_stats.get('lastActiveDate')
         current_streak = user_stats.get('currentStreakDays', 0)
@@ -233,12 +241,20 @@ async def update_user_streaks_and_activity_unified(db, user_id: str, activity_ty
         today_found = False
         for activity in weekly_activity:
             if activity['date'] == today:
-                activity['activitiesCount'] += 1  # ✅ Changed from sessionsCount to activitiesCount
+                # Handle both old and new field names for backward compatibility
+                if 'activitiesCount' in activity:
+                    activity['activitiesCount'] += 1
+                elif 'sessionsCount' in activity:
+                    # Migrate old data to new field name
+                    activity['activitiesCount'] = activity.get('sessionsCount', 0) + 1
+                    activity.pop('sessionsCount', None)  # Remove old field
+                else:
+                    activity['activitiesCount'] = 1
                 today_found = True
                 break
         
         if not today_found:
-            weekly_activity.append({'date': today, 'activitiesCount': 1})  # ✅ Changed from sessionsCount to activitiesCount
+            weekly_activity.append({'date': today, 'activitiesCount': 1})
         
         # Keep only last 7 days
         today_date = datetime.strptime(today, '%Y-%m-%d').date()
@@ -249,7 +265,7 @@ async def update_user_streaks_and_activity_unified(db, user_id: str, activity_ty
         ]
         
         # Update user stats
-        await db['user_stats'].update_one(
+        await db[user_stats_collection].update_one(
             {'_id': ObjectId(user_id)},
             {
                 '$set': {
@@ -282,7 +298,7 @@ async def get_activity_heatmap(
     user_id: str = Depends(get_current_user_id)
 ):
     db = Database.get_database()
-    stats = await db['user_stats'].find_one({'_id': ObjectId(user_id)})
+    stats = await db[user_stats_collection].find_one({'_id': ObjectId(user_id)})
     
     # Get weekly activity data
     weekly_activity = stats.get('weeklyActivity', []) if stats else []
@@ -293,7 +309,7 @@ async def get_activity_heatmap(
     start_date = today - timedelta(days=days-1)
     
     # Query sessions in the date range to get calories per day
-    sessions = await db['dance_sessions'].find({
+    sessions = await db[dance_sessions_collection].find({
         "userId": ObjectId(user_id),
         "status": "completed",
         "startTime": {
@@ -303,7 +319,7 @@ async def get_activity_heatmap(
     }).to_list(1000)
     
     # Query challenge submissions in the date range
-    challenge_submissions = await db['challenge_submissions'].find({
+    challenge_submissions = await db[challenge_submissions_collection].find({
         "userId": user_id,
         "timestamps.submittedAt": {
             "$gte": datetime.combine(start_date, datetime.min.time()),
@@ -368,14 +384,14 @@ async def get_user_history(
         all_activities = []
         
         # Get total counts for each section
-        sessions_count = await db['dance_sessions'].count_documents({"userId": ObjectId(user_id)})
-        challenges_count = await db['challenge_submissions'].count_documents({"userId": user_id})
-        breakdowns_count = await db['dance_breakdowns'].count_documents({"userId": ObjectId(user_id), "success": True})
+        sessions_count = await db[dance_sessions_collection].count_documents({"userId": ObjectId(user_id)})
+        challenges_count = await db[challenge_submissions_collection].count_documents({"userId": user_id})
+        breakdowns_count = await db[dance_breakdowns_collection].count_documents({"userId": ObjectId(user_id), "success": True})
         total_activities = sessions_count + challenges_count + breakdowns_count
         
         # 1. Get Dance Sessions
         if not activity_type or activity_type in ['session', 'all']:
-            sessions = await db['dance_sessions'].find(
+            sessions = await db[dance_sessions_collection].find(
                 {"userId": ObjectId(user_id)},
                 {
                     "startTime": 1,
@@ -419,7 +435,7 @@ async def get_user_history(
         
         # 2. Get Challenge Submissions
         if not activity_type or activity_type in ['challenge', 'all']:
-            challenges = await db['challenge_submissions'].find(
+            challenges = await db[challenge_submissions_collection].find(
                 {"userId": user_id},  # Challenge submissions store userId as string, not ObjectId
                 {
                     "challengeId": 1,
@@ -435,7 +451,7 @@ async def get_user_history(
             for challenge_submission in challenges:
                 challenge_id = challenge_submission.get('challengeId')
                 if challenge_id:
-                    challenge = await db['challenges'].find_one({"_id": ObjectId(challenge_id)})
+                    challenge = await db[challenges_collection].find_one({"_id": ObjectId(challenge_id)})
                     if challenge:
                         # Convert ObjectId to string to avoid serialization issues
                         challenge['_id'] = str(challenge['_id'])
@@ -480,7 +496,7 @@ async def get_user_history(
         
         # 3. Get Dance Breakdowns
         if not activity_type or activity_type in ['breakdown', 'all']:
-            breakdowns = await db['dance_breakdowns'].find(
+            breakdowns = await db[dance_breakdowns_collection].find(
                 {"userId": ObjectId(user_id), "success": True},
                 {
                     "videoUrl": 1,
@@ -572,9 +588,9 @@ async def get_activity_counts(user_id: str = Depends(get_current_user_id)):
         db = Database.get_database()
         
         # Get counts for each section
-        sessions_count = await db['dance_sessions'].count_documents({"userId": ObjectId(user_id)})
-        challenges_count = await db['challenge_submissions'].count_documents({"userId": user_id})
-        breakdowns_count = await db['dance_breakdowns'].count_documents({"userId": ObjectId(user_id), "success": True})
+        sessions_count = await db[dance_sessions_collection].count_documents({"userId": ObjectId(user_id)})
+        challenges_count = await db[challenge_submissions_collection].count_documents({"userId": user_id})
+        breakdowns_count = await db[dance_breakdowns_collection].count_documents({"userId": ObjectId(user_id), "success": True})
         total_activities = sessions_count + challenges_count + breakdowns_count
         
         return {

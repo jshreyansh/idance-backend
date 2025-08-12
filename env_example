@@ -1,8 +1,12 @@
+# Environment Configuration
+ENVIRONMENT=development  # Options: development, test, production
+
 # JWT Configuration
 JWT_SECRET=your-super-secret-jwt-key-here-change-in-production
 
 # Google OAuth Configuration  
 GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_ID_WEB=your-google-client-id-web.apps.googleusercontent.com
 
 # MongoDB Configuration (if needed)
 MONGO_URL=mongodb://localhost:27017

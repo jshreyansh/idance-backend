@@ -9,7 +9,10 @@ from services.challenge.submission import submission_router
 from services.session.service import session_router
 from services.ai.service import ai_router
 from services.s3.router import s3_router
+from services.rate_limiting.admin import rate_limit_admin_router
+from services.rate_limiting.decorators import public_rate_limit
 from infra.mongo import connect_to_mongo, close_mongo_connection
+from fastapi import Request
 
 app = FastAPI()
 
@@ -50,6 +53,7 @@ app.include_router(submission_router)
 app.include_router(session_router)
 app.include_router(ai_router)
 app.include_router(s3_router)
+app.include_router(rate_limit_admin_router)
 
 @app.on_event("startup")
 async def startup_event():
@@ -60,9 +64,11 @@ async def shutdown_event():
     await close_mongo_connection()
 
 @app.get("/")
-def root():
+@public_rate_limit('public_data')
+async def root(request: Request):
     return {"message": "Welcome to iDance API Gateway"}
 
 @app.get("/health")
-def health():
+@public_rate_limit('health_check')
+async def health(request: Request):
     return {"status": "ok"} 

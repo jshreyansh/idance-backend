@@ -7,6 +7,10 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import List, Optional
 from infra.mongo import Database
+# Environment-aware collection names
+challenges_collection = Database.get_collection_name('challenges')
+challenge_submissions_collection = Database.get_collection_name('challenge_submissions')
+
 from services.challenge.service import ChallengeService
 import logging
 
@@ -66,7 +70,7 @@ class BackgroundJobService:
         db = Database.get_database()
         now = datetime.utcnow()
         
-        result = await db['challenges'].update_many(
+        result = await db[challenges_collection].update_many(
             {
                 "endTime": {"$lt": now},
                 "isActive": True
@@ -86,7 +90,7 @@ class BackgroundJobService:
         now = datetime.utcnow()
         
         # Check if there's already an active challenge
-        active_challenge = await db['challenges'].find_one({
+        active_challenge = await db[challenges_collection].find_one({
             "isActive": True,
             "startTime": {"$lte": now},
             "endTime": {"$gte": now}
@@ -97,7 +101,7 @@ class BackgroundJobService:
             return 0
         
         # Find the next challenge to activate
-        next_challenge = await db['challenges'].find_one({
+        next_challenge = await db[challenges_collection].find_one({
             "isActive": False,
             "startTime": {"$gte": now},
             "endTime": {"$gte": now}
@@ -105,7 +109,7 @@ class BackgroundJobService:
         
         if next_challenge:
             # Activate the challenge
-            await db['challenges'].update_one(
+            await db[challenges_collection].update_one(
                 {"_id": next_challenge["_id"]},
                 {
                     "$set": {
@@ -125,7 +129,7 @@ class BackgroundJobService:
         db = Database.get_database()
         
         # Get all active challenges
-        active_challenges = await db['challenges'].find({
+        active_challenges = await db[challenges_collection].find({
             "isActive": True
         }).to_list(length=None)
         
@@ -135,7 +139,7 @@ class BackgroundJobService:
             challenge_id = str(challenge["_id"])
             
             # Count submissions for this challenge
-            submission_count = await db['challenge_submissions'].count_documents({
+            submission_count = await db[challenge_submissions_collection].count_documents({
                 "challengeId": challenge_id
             })
             
@@ -149,7 +153,7 @@ class BackgroundJobService:
                 }}
             ]
             
-            stats_result = await db['challenge_submissions'].aggregate(pipeline).to_list(length=1)
+            stats_result = await db[challenge_submissions_collection].aggregate(pipeline).to_list(length=1)
             
             avg_score = 0.0
             top_score = 0
@@ -159,7 +163,7 @@ class BackgroundJobService:
                 top_score = stats_result[0].get("topScore", 0) or 0
             
             # Update challenge statistics
-            await db['challenges'].update_one(
+            await db[challenges_collection].update_one(
                 {"_id": challenge["_id"]},
                 {
                     "$set": {
@@ -182,12 +186,12 @@ class BackgroundJobService:
             cutoff_date = now - timedelta(days=90)  # Keep 90 days of data
             
             # Clean up old submissions
-            old_submissions = await db['challenge_submissions'].delete_many({
+            old_submissions = await db[challenge_submissions_collection].delete_many({
                 "submittedAt": {"$lt": cutoff_date}
             })
             
             # Clean up old inactive challenges (older than 30 days)
-            old_challenges = await db['challenges'].delete_many({
+            old_challenges = await db[challenges_collection].delete_many({
                 "isActive": False,
                 "endTime": {"$lt": now - timedelta(days=30)}
             })

@@ -1,14 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from services.s3.service import s3_service, generate_session_video_key, generate_thumbnail_key, generate_challenge_video_key
 from services.s3.models import VideoUploadRequest, VideoUploadResponse, ThumbnailUploadRequest, ThumbnailUploadResponse, ChallengeVideoUploadRequest, ChallengeVideoUploadResponse, DanceBreakdownVideoUploadRequest, DanceBreakdownVideoUploadResponse
 from services.user.service import get_current_user_id
+from services.rate_limiting.decorators import protected_rate_limit
 from infra.mongo import Database
+# Environment-aware collection names
+challenges_collection = Database.get_collection_name('challenges')
+challenge_submissions_collection = Database.get_collection_name('challenge_submissions')
+dance_sessions_collection = Database.get_collection_name('dance_sessions')
+
 from bson import ObjectId
 
 s3_router = APIRouter()
 
 @s3_router.post('/api/s3/upload/video', response_model=VideoUploadResponse)
+@protected_rate_limit('upload_video')
 async def get_video_upload_url(
+    http_request: Request,
     request: VideoUploadRequest = Body(...),
     user_id: str = Depends(get_current_user_id)
 ):
@@ -17,7 +25,7 @@ async def get_video_upload_url(
     """
     # Verify the session exists and belongs to the user
     db = Database.get_database()
-    session = await db['dance_sessions'].find_one({
+    session = await db[dance_sessions_collection].find_one({
         '_id': ObjectId(request.session_id),
         'userId': ObjectId(user_id)
     })
@@ -50,7 +58,9 @@ async def get_video_upload_url(
     )
 
 @s3_router.post('/api/s3/upload/challenge-video', response_model=ChallengeVideoUploadResponse)
+@protected_rate_limit('upload_video')
 async def get_challenge_video_upload_url(
+    http_request: Request,
     request: ChallengeVideoUploadRequest = Body(...),
     user_id: str = Depends(get_current_user_id)
 ):
@@ -59,7 +69,7 @@ async def get_challenge_video_upload_url(
     """
     # Verify the challenge exists and is active
     db = Database.get_database()
-    challenge = await db['challenges'].find_one({
+    challenge = await db[challenges_collection].find_one({
         '_id': ObjectId(request.challenge_id),
         'isActive': True
     })
@@ -68,7 +78,7 @@ async def get_challenge_video_upload_url(
         raise HTTPException(status_code=404, detail="Challenge not found or not active")
     
     # Check if user already submitted to this challenge
-    existing_submission = await db['challenge_submissions'].find_one({
+    existing_submission = await db[challenge_submissions_collection].find_one({
         'userId': user_id,
         'challengeId': request.challenge_id
     })
@@ -101,7 +111,9 @@ async def get_challenge_video_upload_url(
     )
 
 @s3_router.post('/api/s3/upload/thumbnail', response_model=ThumbnailUploadResponse)
+@protected_rate_limit('upload_thumbnail')
 async def get_thumbnail_upload_url(
+    http_request: Request,
     request: ThumbnailUploadRequest = Body(...),
     user_id: str = Depends(get_current_user_id)
 ):
@@ -110,7 +122,7 @@ async def get_thumbnail_upload_url(
     """
     # Verify the session exists and belongs to the user
     db = Database.get_database()
-    session = await db['dance_sessions'].find_one({
+    session = await db[dance_sessions_collection].find_one({
         '_id': ObjectId(request.session_id),
         'userId': ObjectId(user_id)
     })
@@ -179,7 +191,9 @@ async def get_file_url(
         raise HTTPException(status_code=500, detail=f"Failed to generate download URL: {str(e)}")
 
 @s3_router.post('/api/s3/upload/dance-breakdown-video', response_model=DanceBreakdownVideoUploadResponse)
+@protected_rate_limit('upload_video')
 async def get_dance_breakdown_video_upload_url(
+    http_request: Request,
     request: DanceBreakdownVideoUploadRequest = Body(...),
     user_id: str = Depends(get_current_user_id)
 ):

@@ -10,7 +10,11 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from services.ai.models import PoseAnalysisResult, PoseFrame, PoseKeypoint, AnalysisRequest, AnalysisResponse
 from services.ai.video_analysis import video_analysis_service
+from infra.mongo import Database
 import logging
+
+# Environment-aware collection names
+challenge_submissions_collection = Database.get_collection_name('challenge_submissions')
 
 logger = logging.getLogger(__name__)
 
@@ -267,7 +271,6 @@ class PoseAnalysisService:
     async def _update_submission_in_database(self, submission_id: str, analysis_response: 'AnalysisResponse') -> None:
         """Update submission in database with analysis results"""
         try:
-            from infra.mongo import Database
             from bson import ObjectId
             from datetime import datetime
             
@@ -288,7 +291,7 @@ class PoseAnalysisService:
                 update_data["poseDataURL"] = analysis_response.pose_data_url
             
             # Update submission
-            result = await db['challenge_submissions'].update_one(
+            result = await db[challenge_submissions_collection].update_one(
                 {"_id": ObjectId(submission_id)},
                 {"$set": update_data}
             )

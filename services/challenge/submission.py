@@ -9,6 +9,13 @@ from typing import Optional, List, Dict
 from datetime import datetime, timedelta
 from bson import ObjectId
 from infra.mongo import Database
+# Environment-aware collection names
+users_collection = Database.get_collection_name('users')
+user_stats_collection = Database.get_collection_name('user_stats')
+challenges_collection = Database.get_collection_name('challenges')
+challenge_submissions_collection = Database.get_collection_name('challenge_submissions')
+dance_sessions_collection = Database.get_collection_name('dance_sessions')
+
 from services.user.service import get_current_user_id
 from services.ai.pose_analysis import pose_analysis_service
 from services.ai.models import AnalysisRequest
@@ -97,7 +104,7 @@ class SubmissionService:
             db = self._get_db()
             
             # Validate challenge exists and is active
-            challenge = await db['challenges'].find_one({
+            challenge = await db[challenges_collection].find_one({
                 "_id": ObjectId(challenge_id),
                 "isActive": True
             })
@@ -106,7 +113,7 @@ class SubmissionService:
                 raise HTTPException(status_code=404, detail="Challenge not found or not active")
             
             # Check if user already submitted to this challenge
-            existing_submission = await db['challenge_submissions'].find_one({
+            existing_submission = await db[challenge_submissions_collection].find_one({
                 "userId": user_id,
                 "challengeId": challenge_id
             })
@@ -115,7 +122,10 @@ class SubmissionService:
                 raise HTTPException(status_code=400, detail="Already submitted to this challenge")
             
             # Get user profile for denormalization
-            user = await db['users'].find_one({"_id": ObjectId(user_id)})
+            user = await db[users_collection].find_one({"_id": ObjectId(user_id)})
+            if not user:
+                raise HTTPException(status_code=404, detail="User not found")
+            
             user_profile = {
                 "displayName": user.get("profile", {}).get("displayName", "Unknown"),
                 "avatarUrl": user.get("profile", {}).get("avatarUrl"),
@@ -153,11 +163,11 @@ class SubmissionService:
                 "shares": 0
             }
             
-            submission_result = await db['challenge_submissions'].insert_one(submission_doc)
+            submission_result = await db[challenge_submissions_collection].insert_one(submission_doc)
             submission_id = str(submission_result.inserted_id)
             
             # Update challenge submission count
-            await db['challenges'].update_one(
+            await db[challenges_collection].update_one(
                 {"_id": ObjectId(challenge_id)},
                 {
                     "$inc": {"totalSubmissions": 1},
@@ -190,18 +200,26 @@ class SubmissionService:
             
             # Get updated submission data if analysis completed
             if analysis_completed:
-                updated_submission = await db['challenge_submissions'].find_one({"_id": ObjectId(submission_id)})
+                updated_submission = await db[challenge_submissions_collection].find_one({"_id": ObjectId(submission_id)})
                 if updated_submission:
-                    submission_doc["analysis"] = updated_submission["analysis"]
-                    submission_doc["timestamps"] = updated_submission["timestamps"]
+                    submission_doc["analysis"] = updated_submission.get("analysis", {})
+                    submission_doc["timestamps"] = updated_submission.get("timestamps", {
+                        "submittedAt": now,
+                        "processedAt": None,
+                        "analyzedAt": None
+                    })
             
             logger.info(f"✅ User {user_id} submitted unified challenge {challenge_id}")
             
             # Create timestamps with proper datetime objects
+            timestamps_data = submission_doc.get("timestamps", {})
+            if timestamps_data is None:
+                timestamps_data = {}
+            
             timestamps = {
                 "submittedAt": now,
-                "processedAt": submission_doc["timestamps"].get("processedAt"),
-                "analyzedAt": submission_doc["timestamps"].get("analyzedAt")
+                "processedAt": timestamps_data.get("processedAt"),
+                "analyzedAt": timestamps_data.get("analyzedAt")
             }
             
             return UnifiedSubmissionResponse(
@@ -209,7 +227,7 @@ class SubmissionService:
                 challengeId=challenge_id,
                 userId=user_id,
                 video=video_data,
-                analysis=submission_doc["analysis"],
+                analysis=submission_doc.get("analysis", {}),
                 metadata=submission_request.metadata,
                 userProfile=user_profile,
                 timestamps=timestamps,
@@ -221,7 +239,9 @@ class SubmissionService:
         except HTTPException:
             raise
         except Exception as e:
+            import traceback
             logger.error(f"❌ Error in unified submission: {e}")
+            logger.error(f"❌ Full traceback: {traceback.format_exc()}")
             raise HTTPException(status_code=500, detail="Failed to submit challenge")
 
     async def update_submission_metadata(self, user_id: str, submission_id: str, metadata: SubmissionMetadataRequest) -> Dict:
@@ -230,7 +250,7 @@ class SubmissionService:
             db = self._get_db()
             
             # Validate submission exists and belongs to user
-            submission = await db['challenge_submissions'].find_one({
+            submission = await db[challenge_submissions_collection].find_one({
                 "_id": ObjectId(submission_id),
                 "userId": user_id
             })
@@ -249,7 +269,7 @@ class SubmissionService:
                 "updatedAt": datetime.utcnow()
             }
             
-            await db['challenge_submissions'].update_one(
+            await db[challenge_submissions_collection].update_one(
                 {"_id": ObjectId(submission_id)},
                 {"$set": update_data}
             )
@@ -266,7 +286,7 @@ class SubmissionService:
                     "updatedAt": datetime.utcnow()
                 }
                 
-                await db['dance_sessions'].update_one(
+                await db[dance_sessions_collection].update_one(
                     {"_id": ObjectId(session_id)},
                     {"$set": session_update_data}
                 )
@@ -344,7 +364,7 @@ class SubmissionService:
                 }
             
             # Update submission
-            result = await db['challenge_submissions'].update_one(
+            result = await db[challenge_submissions_collection].update_one(
                 {"_id": ObjectId(submission_id)},
                 {"$set": update_data}
             )
@@ -360,7 +380,7 @@ class SubmissionService:
         try:
             db = self._get_db()
             
-            submission = await db['challenge_submissions'].find_one({
+            submission = await db[challenge_submissions_collection].find_one({
                 "_id": ObjectId(submission_id)
             })
             
@@ -383,12 +403,12 @@ class SubmissionService:
             skip = (page - 1) * limit
             
             # Get total count
-            total = await db['challenge_submissions'].count_documents({
+            total = await db[challenge_submissions_collection].count_documents({
                 "challengeId": challenge_id
             })
             
             # Get submissions
-            submissions_cursor = db['challenge_submissions'].find({
+            submissions_cursor = db[challenge_submissions_collection].find({
                 "challengeId": challenge_id
             }).sort("timestamps.submittedAt", -1).skip(skip).limit(limit)
             
@@ -418,12 +438,12 @@ class SubmissionService:
             skip = (page - 1) * limit
             
             # Get total count
-            total = await db['challenge_submissions'].count_documents({
+            total = await db[challenge_submissions_collection].count_documents({
                 "userId": user_id
             })
             
             # Get submissions
-            submissions_cursor = db['challenge_submissions'].find({
+            submissions_cursor = db[challenge_submissions_collection].find({
                 "userId": user_id
             }).sort("timestamps.submittedAt", -1).skip(skip).limit(limit)
             
@@ -627,7 +647,7 @@ class SubmissionService:
     async def _update_user_stats_from_challenge(self, db, user_id: str, video_data: VideoData, challenge: dict):
         """Updates user stats based on the challenge type and video duration."""
         try:
-            user = await db['users'].find_one({"_id": ObjectId(user_id)})
+            user = await db[users_collection].find_one({"_id": ObjectId(user_id)})
             if not user:
                 logger.warning(f"User {user_id} not found for stats update.")
                 return
@@ -640,19 +660,27 @@ class SubmissionService:
             today = datetime.utcnow().strftime('%Y-%m-%d')
             
             # Get current user stats
-            user_stats = await db['user_stats'].find_one({'_id': ObjectId(user_id)}) or {}
+            user_stats = await db[user_stats_collection].find_one({'_id': ObjectId(user_id)}) or {}
             weekly_activity = user_stats.get('weeklyActivity', [])
             
             # Update weekly activity for today
             today_found = False
             for activity in weekly_activity:
                 if activity['date'] == today:
-                    activity['sessionsCount'] += 1
+                    # Handle both old and new field names for backward compatibility
+                    if 'activitiesCount' in activity:
+                        activity['activitiesCount'] += 1
+                    elif 'sessionsCount' in activity:
+                        # Migrate old data to new field name
+                        activity['activitiesCount'] = activity.get('sessionsCount', 0) + 1
+                        activity.pop('sessionsCount', None)  # Remove old field
+                    else:
+                        activity['activitiesCount'] = 1
                     today_found = True
                     break
             
             if not today_found:
-                weekly_activity.append({'date': today, 'sessionsCount': 1})
+                weekly_activity.append({'date': today, 'activitiesCount': 1})
             
             # Keep only last 7 days
             today_date = datetime.strptime(today, '%Y-%m-%d').date()
@@ -666,7 +694,7 @@ class SubmissionService:
             if challenge_type == "freestyle":
                 # For freestyle, duration is directly related to calories burned
                 calories_burned = int(duration_minutes * 5) # Example: 5 calories per minute
-                await db['user_stats'].update_one(
+                await db[user_stats_collection].update_one(
                     {"_id": ObjectId(user_id)},
                     {
                         "$inc": {
@@ -686,7 +714,7 @@ class SubmissionService:
             elif challenge_type == "static":
                 # For static challenges, less calories but still counts as activity
                 calories_burned = int(duration_minutes * 3) # Example: 3 calories per minute
-                await db['user_stats'].update_one(
+                await db[user_stats_collection].update_one(
                     {"_id": ObjectId(user_id)},
                     {
                         "$inc": {
@@ -706,7 +734,7 @@ class SubmissionService:
             else:
                 # For other challenge types, still count as activity
                 calories_burned = int(duration_minutes * 4) # Example: 4 calories per minute
-                await db['user_stats'].update_one(
+                await db[user_stats_collection].update_one(
                     {"_id": ObjectId(user_id)},
                     {
                         "$inc": {

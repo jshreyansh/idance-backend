@@ -6,6 +6,11 @@ from services.challenge.models import (
 )
 from services.user.service import get_current_user_id
 from infra.mongo import Database
+# Environment-aware collection names
+challenges_collection = Database.get_collection_name('challenges')
+challenge_submissions_collection = Database.get_collection_name('challenge_submissions')
+users_collection = Database.get_collection_name('users')
+
 from datetime import datetime, timedelta
 from bson import ObjectId
 from typing import List, Optional
@@ -74,7 +79,7 @@ class ChallengeService:
             "participantCount": 0
         }
         
-        result = await self._get_db()['challenges'].insert_one(challenge_doc)
+        result = await self._get_db()[challenges_collection].insert_one(challenge_doc)
         return str(result.inserted_id)
     
     async def get_active_challenge(self) -> Optional[TodayChallengeResponse]:
@@ -83,7 +88,7 @@ class ChallengeService:
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = today_start + timedelta(days=1)
         
-        challenge = await self._get_db()['challenges'].find_one({
+        challenge = await self._get_db()[challenges_collection].find_one({
             "startTime": {"$lte": now},
             "endTime": {"$gt": now},
             "isActive": True
@@ -99,7 +104,7 @@ class ChallengeService:
         time_remaining_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         
         # Get participant count
-        participant_count = await self._get_db()['challenge_submissions'].count_documents({
+        participant_count = await self._get_db()[challenge_submissions_collection].count_documents({
             "challengeId": str(challenge['_id'])
         })
         
@@ -153,17 +158,17 @@ class ChallengeService:
         skip = (search_request.page - 1) * search_request.limit
         
         # Get challenges
-        cursor = db['challenges'].find(query).skip(skip).limit(search_request.limit).sort("createdAt", -1)
+        cursor = db[challenges_collection].find(query).skip(skip).limit(search_request.limit).sort("createdAt", -1)
         challenges = await cursor.to_list(length=search_request.limit)
         
         # Get total count
-        total = await db['challenges'].count_documents(query)
+        total = await db[challenges_collection].count_documents(query)
         
         # Convert to response models
         challenge_responses = []
         for challenge in challenges:
             # Get participant count for each challenge
-            participant_count = await db['challenge_submissions'].count_documents({
+            participant_count = await db[challenge_submissions_collection].count_documents({
                 "challengeId": str(challenge['_id'])
             })
             
@@ -188,7 +193,7 @@ class ChallengeService:
         db = self._get_db()
         
         # Validate challenge exists
-        challenge = await db['challenges'].find_one({"_id": ObjectId(challenge_id)})
+        challenge = await db[challenges_collection].find_one({"_id": ObjectId(challenge_id)})
         if not challenge:
             raise HTTPException(status_code=404, detail="Challenge not found")
         
@@ -208,7 +213,7 @@ class ChallengeService:
             {"$unwind": "$user"}
         ]
         
-        submissions = await db['challenge_submissions'].aggregate(pipeline).to_list(length=50)
+        submissions = await db[challenge_submissions_collection].aggregate(pipeline).to_list(length=50)
         
         # Build leaderboard entries
         entries = []
@@ -266,7 +271,7 @@ class ChallengeService:
         
         # Also get any additional categories from existing challenges
         db = self._get_db()
-        existing_categories = await db['challenges'].distinct("categories")
+        existing_categories = await db[challenges_collection].distinct("categories")
         
         # Flatten the categories arrays and get unique values
         all_categories = set(predefined_categories)
@@ -281,7 +286,7 @@ class ChallengeService:
         db = self._get_db()
         
         # Get all tags and flatten
-        all_tags = await db['challenges'].distinct("tags")
+        all_tags = await db[challenges_collection].distinct("tags")
         flat_tags = []
         for tag_list in all_tags:
             if tag_list:
@@ -293,7 +298,7 @@ class ChallengeService:
     async def get_challenge_by_id(self, challenge_id: str) -> Optional[ChallengeResponse]:
         """Get a specific challenge by ID"""
         try:
-            challenge = await self._get_db()['challenges'].find_one({"_id": ObjectId(challenge_id)})
+            challenge = await self._get_db()[challenges_collection].find_one({"_id": ObjectId(challenge_id)})
             if not challenge:
                 return None
             
@@ -318,10 +323,10 @@ class ChallengeService:
                 query["isActive"] = True
             
             # Get total count
-            total = await self._get_db()['challenges'].count_documents(query)
+            total = await self._get_db()[challenges_collection].count_documents(query)
             
             # Get challenges
-            challenges_cursor = self._get_db()['challenges'].find(query).sort("createdAt", -1).skip(skip).limit(limit)
+            challenges_cursor = self._get_db()[challenges_collection].find(query).sort("createdAt", -1).skip(skip).limit(limit)
             challenges = await challenges_cursor.to_list(length=limit)
             
             # Convert to response models
@@ -354,7 +359,7 @@ class ChallengeService:
         now = datetime.utcnow()
         future_date = now + timedelta(days=days)
         
-        challenges_cursor = self._get_db()['challenges'].find({
+        challenges_cursor = self._get_db()[challenges_collection].find({
             "startTime": {"$gte": now, "$lte": future_date},
             "isActive": True
         }).sort("startTime", 1)
@@ -374,7 +379,7 @@ class ChallengeService:
     async def deactivate_expired_challenges(self) -> int:
         """Deactivate challenges that have ended"""
         now = datetime.utcnow()
-        result = await self._get_db()['challenges'].update_many(
+        result = await self._get_db()[challenges_collection].update_many(
             {"endTime": {"$lt": now}, "isActive": True},
             {"$set": {"isActive": False, "updatedAt": now}}
         )
@@ -397,7 +402,7 @@ class ChallengeService:
             db = self._get_db()
             
             # Validate challenge exists
-            existing_challenge = await db['challenges'].find_one({
+            existing_challenge = await db[challenges_collection].find_one({
                 "_id": ObjectId(challenge_id)
             })
             
@@ -427,7 +432,7 @@ class ChallengeService:
             update_data = {k: v for k, v in update_data.items() if v is not None}
             
             # Update challenge
-            result = await db['challenges'].update_one(
+            result = await db[challenges_collection].update_one(
                 {"_id": ObjectId(challenge_id)},
                 {"$set": update_data}
             )
@@ -446,7 +451,7 @@ class ChallengeService:
             db = self._get_db()
             
             # Validate challenge exists
-            existing_challenge = await db['challenges'].find_one({
+            existing_challenge = await db[challenges_collection].find_one({
                 "_id": ObjectId(challenge_id)
             })
             
@@ -454,7 +459,7 @@ class ChallengeService:
                 raise HTTPException(status_code=404, detail="Challenge not found")
             
             # Soft delete by setting isActive to False
-            result = await db['challenges'].update_one(
+            result = await db[challenges_collection].update_one(
                 {"_id": ObjectId(challenge_id)},
                 {
                     "$set": {
@@ -480,7 +485,7 @@ class ChallengeService:
             db = self._get_db()
             
             # Get challenge details
-            challenge = await db['challenges'].find_one({
+            challenge = await db[challenges_collection].find_one({
                 "_id": ObjectId(challenge_id)
             })
             
@@ -488,7 +493,7 @@ class ChallengeService:
                 raise HTTPException(status_code=404, detail="Challenge not found")
             
             # Get submission statistics
-            submission_stats = await db['challenge_submissions'].aggregate([
+            submission_stats = await db[challenge_submissions_collection].aggregate([
                 {"$match": {"challengeId": challenge_id}},
                 {"$group": {
                     "_id": None,
@@ -511,14 +516,14 @@ class ChallengeService:
             }
             
             # Get user participation stats
-            unique_participants = await db['challenge_submissions'].distinct(
+            unique_participants = await db[challenge_submissions_collection].distinct(
                 "userId", 
                 {"challengeId": challenge_id}
             )
             
             # Get recent submissions (last 7 days)
             week_ago = datetime.utcnow() - timedelta(days=7)
-            recent_submissions = await db['challenge_submissions'].count_documents({
+            recent_submissions = await db[challenge_submissions_collection].count_documents({
                 "challengeId": challenge_id,
                 "submittedAt": {"$gte": week_ago}
             })
@@ -551,7 +556,7 @@ class ChallengeService:
         """Get public submissions for a specific challenge with video URLs"""
         try:
             # Validate challenge exists
-            challenge = await self._get_db()['challenges'].find_one({
+            challenge = await self._get_db()[challenges_collection].find_one({
                 "_id": ObjectId(challenge_id)
             })
             
@@ -562,7 +567,7 @@ class ChallengeService:
             skip = (page - 1) * limit
             
             # Get public submissions for this challenge
-            submissions_cursor = self._get_db()['challenge_submissions'].find({
+            submissions_cursor = self._get_db()[challenge_submissions_collection].find({
                 "challengeId": challenge_id,
                 "metadata.isPublic": True
             }).sort("timestamps.submittedAt", -1).skip(skip).limit(limit)
@@ -570,7 +575,7 @@ class ChallengeService:
             submissions = await submissions_cursor.to_list(length=limit)
             
             # Get total count
-            total = await self._get_db()['challenge_submissions'].count_documents({
+            total = await self._get_db()[challenge_submissions_collection].count_documents({
                 "challengeId": challenge_id,
                 "metadata.isPublic": True
             })
@@ -579,7 +584,7 @@ class ChallengeService:
             submission_entries = []
             for submission in submissions:
                 # Get user profile
-                user = await self._get_db()['users'].find_one({
+                user = await self._get_db()[users_collection].find_one({
                     "_id": ObjectId(submission['userId'])
                 })
                 
@@ -639,10 +644,10 @@ class ChallengeService:
                 query["isActive"] = True
             
             # Get total count
-            total = await self._get_db()['challenges'].count_documents(query)
+            total = await self._get_db()[challenges_collection].count_documents(query)
             
             # Get challenges
-            challenges_cursor = self._get_db()['challenges'].find(query).sort("createdAt", -1).skip(skip).limit(limit)
+            challenges_cursor = self._get_db()[challenges_collection].find(query).sort("createdAt", -1).skip(skip).limit(limit)
             challenges = await challenges_cursor.to_list(length=limit)
             
             # Convert to response models

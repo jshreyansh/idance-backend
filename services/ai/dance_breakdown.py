@@ -29,6 +29,10 @@ from services.ai.models import (
 )
 from services.ai.movement_analysis import analyze_movement_enhanced
 from infra.mongo import Database
+# Environment-aware collection names
+user_stats_collection = Database.get_collection_name('user_stats')
+dance_breakdowns_collection = Database.get_collection_name('dance_breakdowns')
+
 from bson import ObjectId
 
 # Load environment variables
@@ -393,7 +397,7 @@ class DanceBreakdownService:
                 "updatedAt": datetime.utcnow()
             }
             
-            result = await db['dance_breakdowns'].insert_one(breakdown_doc)
+            result = await db[dance_breakdowns_collection].insert_one(breakdown_doc)
             breakdown_id = str(result.inserted_id)
             
             # Update user stats for breakdown
@@ -423,7 +427,7 @@ class DanceBreakdownService:
             today = datetime.utcnow().strftime('%Y-%m-%d')
             
             # Get current user stats
-            user_stats = await db['user_stats'].find_one({'_id': ObjectId(user_id)}) or {}
+            user_stats = await db[user_stats_collection].find_one({'_id': ObjectId(user_id)}) or {}
             weekly_activity = user_stats.get('weeklyActivity', [])
             
             # Update weekly activity for today
@@ -446,7 +450,7 @@ class DanceBreakdownService:
             ]
             
             # Update user stats
-            await db['user_stats'].update_one(
+            await db[user_stats_collection].update_one(
                 {"_id": ObjectId(user_id)},
                 {
                     "$inc": {
@@ -474,7 +478,7 @@ class DanceBreakdownService:
         try:
             db = self._get_db()
             
-            cursor = db['dance_breakdowns'].find(
+            cursor = db[dance_breakdowns_collection].find(
                 {"userId": ObjectId(user_id)},
                 {
                     "videoUrl": 1,
@@ -509,7 +513,7 @@ class DanceBreakdownService:
         try:
             db = self._get_db()
             
-            breakdown = await db['dance_breakdowns'].find_one({
+            breakdown = await db[dance_breakdowns_collection].find_one({
                 "_id": ObjectId(breakdown_id),
                 "userId": ObjectId(user_id)
             })
@@ -533,7 +537,7 @@ class DanceBreakdownService:
             db = self._get_db()
             
             # Debug: Check if collection exists and has data
-            total_docs = await db['dance_breakdowns'].count_documents({})
+            total_docs = await db[dance_breakdowns_collection].count_documents({})
             logger.info(f"📊 Total breakdowns in database: {total_docs}")
             
             if total_docs == 0:
@@ -595,7 +599,7 @@ class DanceBreakdownService:
                 }
             ]
             
-            breakdowns = await db['dance_breakdowns'].aggregate(pipeline).to_list(length=limit)
+            breakdowns = await db[dance_breakdowns_collection].aggregate(pipeline).to_list(length=limit)
             logger.info(f"📊 Retrieved {len(breakdowns)} unique breakdowns from aggregation")
             
             # Get total count of unique videos
@@ -603,7 +607,7 @@ class DanceBreakdownService:
                 {"$group": {"_id": "$videoUrl"}},
                 {"$count": "total"}
             ]
-            unique_count_result = await db['dance_breakdowns'].aggregate(unique_count_pipeline).to_list(length=1)
+            unique_count_result = await db[dance_breakdowns_collection].aggregate(unique_count_pipeline).to_list(length=1)
             total = unique_count_result[0]['total'] if unique_count_result else 0
             
             # Convert ObjectIds to strings
@@ -1353,7 +1357,7 @@ class DanceBreakdownService:
             db = self._get_db()
             
             # Find breakdowns without thumbnails
-            breakdowns_without_thumbnails = await db['dance_breakdowns'].find({
+            breakdowns_without_thumbnails = await db[dance_breakdowns_collection].find({
                 "$or": [
                     {"thumbnailUrl": {"$exists": False}},
                     {"thumbnailUrl": ""},
@@ -1381,7 +1385,7 @@ class DanceBreakdownService:
                     
                     if thumbnail_url:
                         # Update database with thumbnail URL
-                        await db['dance_breakdowns'].update_one(
+                        await db[dance_breakdowns_collection].update_one(
                             {"_id": breakdown['_id']},
                             {"$set": {"thumbnailUrl": thumbnail_url}}
                         )
