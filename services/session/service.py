@@ -112,6 +112,9 @@ async def update_user_streaks_and_activity(db, user_id, today):
     today_found = False
     for activity in weekly_activity:
         if activity['date'] == today:
+            # Ensure sessionsCount exists (for backward compatibility)
+            if 'sessionsCount' not in activity:
+                activity['sessionsCount'] = 0
             activity['sessionsCount'] += 1
             today_found = True
             break
@@ -180,22 +183,22 @@ async def complete_session(
         await update_user_streaks_and_activity_unified(db, user_id, "session")
         
         # Update session-specific stats
-        await update_user_stats_from_session(db, user_id, update_fields)
+        await update_user_stats_from_session(db, user_id, session_id)
         
         return {"message": "Session completed successfully"}
     else:
         raise HTTPException(status_code=404, detail="Session not found or already completed")
 
-async def update_user_stats_from_session(db, user_id, session_data):
+async def update_user_stats_from_session(db, user_id, session_id):
     """Update user stats based on completed session data"""
     # Get current session to extract style for mostPlayedStyle logic
-    session = await db[dance_sessions_collection].find_one({"_id": ObjectId(session_data.sessionId)})
+    session = await db[dance_sessions_collection].find_one({"_id": ObjectId(session_id)})
     style = session.get('style', '') if session else ''
     
     # Check if this session is part of a challenge submission
     challenge_submissions_collection = Database.get_collection_name('challenge_submissions')
     is_challenge_session = await db[challenge_submissions_collection].find_one({
-        "sessionId": session_data.sessionId
+        "sessionId": session_id
     })
     
     # Prepare stats update
@@ -206,13 +209,13 @@ async def update_user_stats_from_session(db, user_id, session_data):
         }
     }
     
-    # Add incremental updates for non-None values
-    if session_data.caloriesBurned is not None:
-        stats_update['$inc']['totalKcal'] = session_data.caloriesBurned
-    if session_data.durationMinutes is not None:
-        stats_update['$inc']['totalTimeMinutes'] = session_data.durationMinutes
-    if session_data.stars is not None:
-        stats_update['$inc']['starsEarned'] = session_data.stars
+    # Add incremental updates for non-None values from session data
+    if session and session.get('caloriesBurned') is not None:
+        stats_update['$inc']['totalKcal'] = session['caloriesBurned']
+    if session and session.get('durationMinutes') is not None:
+        stats_update['$inc']['totalTimeMinutes'] = session['durationMinutes']
+    if session and session.get('stars') is not None:
+        stats_update['$inc']['starsEarned'] = session['stars']
     
     # Track sessions vs challenges separately
     if is_challenge_session:

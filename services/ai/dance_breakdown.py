@@ -434,6 +434,9 @@ class DanceBreakdownService:
             today_found = False
             for activity in weekly_activity:
                 if activity['date'] == today:
+                    # Ensure sessionsCount exists (for backward compatibility)
+                    if 'sessionsCount' not in activity:
+                        activity['sessionsCount'] = 0
                     activity['sessionsCount'] += 1
                     today_found = True
                     break
