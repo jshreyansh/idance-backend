@@ -30,12 +30,12 @@ async def start_session(
     user = await db[users_collection].find_one({'_id': ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail='User not found')
-    profile = user.get('profile', {})
+    profile = user.get('profile', {}) or {}
     userProfile = {
         'displayName': profile.get('displayName', ''),
         'avatarUrl': profile.get('avatarUrl', ''),
         'isPro': user.get('isPro', False),
-        'location': profile.get('location', {}).get('city', '')
+        'location': profile.get('location', {}).get('city', '') if profile.get('location') else ''
     }
     
     # Check if user already had a session today

@@ -20,6 +20,15 @@ async def verify_google_token(id_token_str: str) -> Dict[str, Any]:
     print(f"🔍 Starting Google token verification")
     print(f"🔍 Token length: {len(id_token_str) if id_token_str else 0}")
     
+    # Check if we received an access token instead of ID token
+    if id_token_str.startswith('ya29'):
+        print(f"🔍 WARNING: Received access token instead of ID token!")
+        print(f"🔍 Access tokens start with 'ya29', ID tokens should start with 'ey'")
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid token type: Received access token instead of ID token. Please send the ID token (JWT) in the idToken field."
+        )
+    
     client_ids = []
     
     # Add iOS client ID if available
@@ -64,9 +73,11 @@ async def verify_google_token(id_token_str: str) -> Dict[str, Any]:
             }
             
         except ValueError as e:
+            print(f"🔍 DEBUG: ValueError with client ID {client_id[:20]}...: {str(e)}")
             # If this client ID failed, try the next one
             continue
         except Exception as e:
+            print(f"🔍 DEBUG: Exception with client ID {client_id[:20]}...: {str(e)}")
             # If this client ID failed, try the next one
             continue
     
@@ -132,7 +143,39 @@ async def fetch_google_profile_data(access_token: str) -> Optional[Dict[str, Any
                 
     except Exception as e:
         # If profile data fetch fails, don't block the sign-in process
-        print(f"Failed to fetch Google profile data: {str(e)}")
+        print(f"⚠️ Failed to fetch extended profile data: {str(e)}")
         return None
-    
-    return None 
+
+async def get_user_info_from_access_token(access_token: str) -> Optional[Dict[str, Any]]:
+    """
+    Get basic user info from access token using Google's userinfo endpoint
+    This is a fallback when ID token verification fails
+    """
+    try:
+        url = "https://www.googleapis.com/oauth2/v2/userinfo"
+        headers = {
+            'Authorization': f'Bearer {access_token}'
+        }
+        
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, headers=headers)
+            
+            if response.status_code == 200:
+                user_info = response.json()
+                return {
+                    'google_id': user_info.get('id'),
+                    'email': user_info.get('email'),
+                    'name': user_info.get('name'),
+                    'picture': user_info.get('picture'),
+                    'email_verified': user_info.get('verified_email', False),
+                    'given_name': user_info.get('given_name'),
+                    'family_name': user_info.get('family_name'),
+                    'locale': user_info.get('locale')
+                }
+            else:
+                print(f"⚠️ Failed to get user info from access token: {response.status_code}")
+                return None
+                
+    except Exception as e:
+        print(f"⚠️ Error getting user info from access token: {str(e)}")
+        return None 

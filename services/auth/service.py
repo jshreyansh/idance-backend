@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from services.auth.models import SignupRequest, LoginRequest, GoogleSignInRequest
 from services.auth.utils import hash_password, verify_password, create_access_token
-from services.auth.google_utils import verify_google_token, fetch_google_profile_data
+from services.auth.google_utils import verify_google_token, fetch_google_profile_data, get_user_info_from_access_token
 from services.rate_limiting.decorators import auth_rate_limit, public_rate_limit
 from infra.mongo import Database
 from datetime import datetime
@@ -63,9 +63,24 @@ async def google_sign_in(request: Request, data: GoogleSignInRequest):
     db = Database.get_database()
     
     try:
-        # Verify Google ID token and get basic user info
+        # Try to verify Google ID token first
         print(f"🔍 Attempting to verify Google token...")
-        google_user_info = await verify_google_token(data.idToken)
+        google_user_info = None
+        
+        try:
+            google_user_info = await verify_google_token(data.idToken)
+        except HTTPException as e:
+            if "Received access token instead of ID token" in str(e.detail):
+                print(f"🔍 Frontend sent access token as ID token, trying fallback method...")
+                # Try to get user info from access token as fallback
+                google_user_info = await get_user_info_from_access_token(data.idToken)
+                if not google_user_info:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail="Failed to get user info from access token. Please ensure you're sending the correct ID token (JWT) in the idToken field."
+                    )
+            else:
+                raise e
         
         # Fetch extended profile data from Google People API
         profile_data = await fetch_google_profile_data(data.accessToken)
@@ -195,7 +210,34 @@ async def test_google_config(request: Request):
         "endpoints_available": [
             "POST /auth/google - Google Sign-In",
             "GET /auth/google/test - Configuration Test",
+            "POST /auth/google/debug - Debug Token",
             "POST /auth/signup - Email Signup", 
             "POST /auth/login - Email Login"
         ]
+    }
+
+@auth_router.post('/auth/google/debug')
+@public_rate_limit('auth_google')
+async def debug_google_token(request: Request, data: GoogleSignInRequest):
+    """
+    Debug endpoint to inspect Google tokens without verification
+    """
+    print(f"🔍 DEBUG: Google token debug request received")
+    print(f"🔍 DEBUG: ID Token length: {len(data.idToken) if data.idToken else 0}")
+    print(f"🔍 DEBUG: Access Token length: {len(data.accessToken) if data.accessToken else 0}")
+    
+    # Show first and last 20 characters of each token
+    id_token_preview = f"{data.idToken[:20]}...{data.idToken[-20:]}" if data.idToken and len(data.idToken) > 40 else data.idToken
+    access_token_preview = f"{data.accessToken[:20]}...{data.accessToken[-20:]}" if data.accessToken and len(data.accessToken) > 40 else data.accessToken
+    
+    return {
+        "debug_info": {
+            "id_token_length": len(data.idToken) if data.idToken else 0,
+            "access_token_length": len(data.accessToken) if data.accessToken else 0,
+            "id_token_preview": id_token_preview,
+            "access_token_preview": access_token_preview,
+            "id_token_starts_with_ey": data.idToken.startswith("ey") if data.idToken else False,
+            "access_token_starts_with_ya": data.accessToken.startswith("ya") if data.accessToken else False
+        },
+        "message": "Token debug info - check server logs for verification attempts"
     } 
