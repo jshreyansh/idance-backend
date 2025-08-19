@@ -52,6 +52,70 @@
 - `200` - Success
 - `401` - Invalid credentials
 
+### **POST /auth/signup**
+**Description:** Register new user with email/password  
+**Authentication:** Not required  
+
+**Request Body:**
+```json
+{
+    "email": "user@example.com",
+    "password": "password123"
+}
+```
+
+**Response:**
+```json
+{
+    "message": "Signup successful",
+    "user_id": "68877865e63d6bd72cdda440",
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "token_type": "bearer"
+}
+```
+
+**Status Codes:**
+- `200` - Success
+- `400` - Email already registered
+
+### **POST /auth/google**
+**Description:** Authenticate user with Google OAuth  
+**Authentication:** Not required  
+
+**Request Body:**
+```json
+{
+    "idToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "accessToken": "ya29.a0AfH6SMC..."
+}
+```
+
+**Response:**
+```json
+{
+    "message": "Google sign-in successful",
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "token_type": "bearer",
+    "user_id": "68877865e63d6bd72cdda440",
+    "user": {
+        "email": "user@gmail.com",
+        "name": "John Doe",
+        "picture": "https://lh3.googleusercontent.com/...",
+        "email_verified": true
+    }
+}
+```
+
+**Status Codes:**
+- `200` - Success
+- `400` - Invalid token
+- `500` - Internal server error
+
+**Notes:**
+- Automatically generates unique username from user's name
+- Fetches extended profile data (gender, birth year, phone, location) from Google People API
+- Supports both ID token and access token fallback authentication
+
 ---
 
 ## 👤 User Management
@@ -108,7 +172,7 @@ Authorization: Bearer <access_token>
 ## 📊 User Statistics
 
 ### **GET /api/stats/me**
-**Description:** Get comprehensive user statistics including activity counts, fitness metrics, and engagement data  
+**Description:** Get comprehensive user statistics calculated from actual activity data  
 **Authentication:** Required  
 
 **Headers:**
@@ -137,15 +201,25 @@ Authorization: Bearer <access_token>
     "weeklyActivity": [
         {
             "date": "2025-01-25",
-            "sessionsCount": 3
+            "activitiesCount": 5
         },
         {
             "date": "2025-01-24",
-            "sessionsCount": 2
+            "activitiesCount": 3
         }
     ]
 }
 ```
+
+**Notes:**
+- **Fitness metrics** (totalKcal, totalTimeMinutes, totalSteps, starsEarned) are calculated from actual activity data
+- **Sessions**: Calories and duration from completed sessions
+- **Challenges**: Calories calculated based on challenge type and video duration
+  - Freestyle: 5 calories/minute
+  - Static: 3 calories/minute  
+  - Other: 4 calories/minute
+- **Dance Breakdowns**: Calories calculated at 4 calories/minute for analysis activity
+- **Activity counts** are real-time calculated from database
 
 ### **POST /api/stats/update**
 **Description:** Update user statistics manually  
@@ -170,7 +244,7 @@ Authorization: Bearer <access_token>
 ```
 
 ### **GET /api/stats/heatmap**
-**Description:** Get activity heatmap data for visualization  
+**Description:** Get activity heatmap data showing total activities (sessions + challenges + breakdowns) per day  
 **Authentication:** Required  
 
 **Query Parameters:**
@@ -181,18 +255,23 @@ Authorization: Bearer <access_token>
 [
     {
         "date": "2025-01-25",
-        "sessionsCount": 3,
+        "activitiesCount": 5,
         "isActive": true,
         "caloriesBurned": 150
     },
     {
         "date": "2025-01-24",
-        "sessionsCount": 2,
+        "activitiesCount": 3,
         "isActive": true,
         "caloriesBurned": 100
     }
 ]
 ```
+
+**Notes:**
+- `activitiesCount` includes sessions, challenges, and dance breakdowns
+- `caloriesBurned` only includes calories from dance sessions (challenges and breakdowns don't track calories)
+- `isActive` is true when there are any activities on that day
 
 ---
 

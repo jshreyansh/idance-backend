@@ -7,8 +7,45 @@ from infra.mongo import Database
 from datetime import datetime
 from bson import ObjectId
 from typing import Optional
+import re
+import random
+import string
 
 auth_router = APIRouter()
+
+async def generate_unique_username(db, users_collection: str, base_name: str) -> str:
+    """
+    Generate a unique username based on the user's name
+    """
+    # Clean the base name: remove special chars, convert to lowercase
+    clean_name = re.sub(r'[^a-zA-Z0-9]', '', base_name.lower())
+    
+    # If clean name is empty, use 'user'
+    if not clean_name:
+        clean_name = 'user'
+    
+    # Try the clean name first
+    username = clean_name
+    counter = 1
+    
+    # Keep trying until we find a unique username
+    while True:
+        existing_user = await db[users_collection].find_one({"profile.username": username})
+        if not existing_user:
+            return username
+        
+        # If username exists, append a number
+        username = f"{clean_name}{counter}"
+        counter += 1
+        
+        # Safety check to prevent infinite loop
+        if counter > 1000:
+            # Generate random username as fallback
+            random_suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
+            username = f"user{random_suffix}"
+            existing_user = await db[users_collection].find_one({"profile.username": username})
+            if not existing_user:
+                return username
 
 @auth_router.post('/auth/signup')
 @auth_rate_limit('auth_signup')
@@ -17,6 +54,11 @@ async def signup(request: Request, data: SignupRequest):
     users_collection = Database.get_collection_name('users')
     if await db[users_collection].find_one({'auth.email': data.email}):
         raise HTTPException(status_code=400, detail='Email already registered')
+    
+    # Generate unique username from email
+    email_username = data.email.split('@')[0]
+    username = await generate_unique_username(db, users_collection, email_username)
+    
     hashed = hash_password(data.password)
     now = datetime.utcnow()
     user_doc = {
@@ -29,9 +71,18 @@ async def signup(request: Request, data: SignupRequest):
             "emailVerified": False,
             "phoneVerified": False
         },
+        "profile": {
+            "username": username,
+            "displayName": None,
+            "avatarUrl": None,
+            "bio": None,
+            "gender": None,
+            "birthYear": None,
+            "location": None
+        },
         "createdAt": now,
-        "lastLoginAt": now
-        # All other fields can be added later
+        "lastLoginAt": now,
+        "updatedAt": now
     }
     result = await db[users_collection].insert_one(user_doc)
     user_id = str(result.inserted_id)
@@ -133,6 +184,10 @@ async def google_sign_in(request: Request, data: GoogleSignInRequest):
             )
             
         else:
+            # Generate unique username for new user
+            base_name = google_user_info.get('name', 'user')
+            username = await generate_unique_username(db, users_collection, base_name)
+            
             # Create new user
             user_doc = {
                 "auth": {
@@ -145,7 +200,7 @@ async def google_sign_in(request: Request, data: GoogleSignInRequest):
                     "phoneVerified": bool(profile_data.get('phone')) if profile_data else False
                 },
                 "profile": {
-                    "username": None,  # User can set this later
+                    "username": username,  # Auto-generated unique username
                     "displayName": google_user_info.get('name'),
                     "avatarUrl": google_user_info.get('picture'),
                     "bio": None,

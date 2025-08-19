@@ -89,63 +89,47 @@ stats_router = APIRouter()
 
 @stats_router.get('/api/stats/me', response_model=UserStatsResponse)
 async def get_my_stats(user_id: str = Depends(get_current_user_id)):
+    """
+    Get comprehensive user stats calculated from actual activity data
+    """
     db = Database.get_database()
     stats = await db[user_stats_collection].find_one({'_id': ObjectId(user_id)})
     
+    # Calculate all stats from actual data
+    total_activities, sessions_count, challenges_count, breakdowns_count = await calculate_activity_counts(db, user_id)
+    total_kcal, total_time_minutes, total_steps, stars_earned = await calculate_fitness_metrics(db, user_id)
+    
     if not stats:
         # Initialize with calculated values
-        total_activities = await calculate_total_activities(db, user_id)
-        
-        # Count individual activities
-        sessions_count = await db[dance_sessions_collection].count_documents({
-            "userId": ObjectId(user_id),
-            "status": "completed"
-        })
-        
-        challenges_count = await db[challenge_submissions_collection].count_documents({
-            "userId": user_id
-        })
-        
-        breakdowns_count = await db[dance_breakdowns_collection].count_documents({
-            "userId": ObjectId(user_id),
-            "success": True
-        })
-        
         return UserStatsResponse(
             totalActivities=total_activities,
             totalSessions=sessions_count,
             totalChallenges=challenges_count,
-            totalBreakdowns=breakdowns_count
+            totalBreakdowns=breakdowns_count,
+            totalKcal=total_kcal,
+            totalTimeMinutes=total_time_minutes,
+            totalSteps=total_steps,
+            starsEarned=stars_earned
         )
     
     stats.pop('_id', None)
-    
-    # Calculate current activity counts
-    total_activities = await calculate_total_activities(db, user_id)
-    sessions_count = await db[dance_sessions_collection].count_documents({
-        "userId": ObjectId(user_id),
-        "status": "completed"
-    })
-    challenges_count = await db[challenge_submissions_collection].count_documents({
-        "userId": user_id
-    })
-    breakdowns_count = await db[dance_breakdowns_collection].count_documents({
-        "userId": ObjectId(user_id),
-        "success": True
-    })
     
     # Update stats with calculated values
     stats.update({
         'totalActivities': total_activities,
         'totalSessions': sessions_count,
         'totalChallenges': challenges_count,
-        'totalBreakdowns': breakdowns_count
+        'totalBreakdowns': breakdowns_count,
+        'totalKcal': total_kcal,
+        'totalTimeMinutes': total_time_minutes,
+        'totalSteps': total_steps,
+        'starsEarned': stars_earned
     })
     
     return UserStatsResponse(**stats)
 
-async def calculate_total_activities(db, user_id: str) -> int:
-    """Calculate total activities by summing sessions, challenges, and breakdowns"""
+async def calculate_activity_counts(db, user_id: str) -> tuple:
+    """Calculate activity counts by summing sessions, challenges, and breakdowns"""
     try:
         # Count sessions
         sessions_count = await db[dance_sessions_collection].count_documents({
@@ -164,21 +148,93 @@ async def calculate_total_activities(db, user_id: str) -> int:
             "success": True
         })
         
-        return sessions_count + challenges_count + breakdowns_count
+        total_activities = sessions_count + challenges_count + breakdowns_count
+        return total_activities, sessions_count, challenges_count, breakdowns_count
         
     except Exception as e:
-        logging.error(f"Error calculating total activities: {e}")
-        return 0
+        logging.error(f"Error calculating activity counts: {e}")
+        return 0, 0, 0, 0
+
+async def calculate_fitness_metrics(db, user_id: str) -> tuple:
+    """Calculate fitness metrics from actual activity data"""
+    try:
+        total_kcal = 0
+        total_time_minutes = 0
+        total_steps = 0
+        stars_earned = 0
+        
+        # Calculate from sessions
+        sessions = await db[dance_sessions_collection].find({
+            "userId": ObjectId(user_id),
+            "status": "completed"
+        }).to_list(1000)
+        
+        for session in sessions:
+            total_kcal += session.get('caloriesBurned', 0) or 0
+            total_time_minutes += session.get('durationMinutes', 0) or 0
+            total_steps += session.get('steps', 0) or 0
+            stars_earned += session.get('stars', 0) or 0
+        
+        # Calculate from challenges
+        challenges = await db[challenge_submissions_collection].find({
+            "userId": user_id
+        }).to_list(1000)
+        
+        for challenge in challenges:
+            # Get video data for duration and calories
+            video_data = challenge.get('videoData', {})
+            if video_data:
+                duration_seconds = video_data.get('duration', 0) or 0
+                duration_minutes = int(duration_seconds / 60) if duration_seconds > 0 else 0
+                total_time_minutes += duration_minutes
+                
+                # Calculate calories based on challenge type
+                challenge_type = challenge.get('challengeType', 'freestyle')
+                if challenge_type == "freestyle":
+                    calories = int(duration_minutes * 5)  # 5 calories per minute
+                elif challenge_type == "static":
+                    calories = int(duration_minutes * 3)  # 3 calories per minute
+                else:
+                    calories = int(duration_minutes * 4)  # 4 calories per minute
+                total_kcal += calories
+            
+            # Add stars from challenge
+            stars_earned += challenge.get('stars', 0) or 0
+        
+        # Calculate from dance breakdowns
+        breakdowns = await db[dance_breakdowns_collection].find({
+            "userId": ObjectId(user_id),
+            "success": True
+        }).to_list(1000)
+        
+        for breakdown in breakdowns:
+            # Get duration from breakdown
+            duration_seconds = breakdown.get('duration', 0) or 0
+            duration_minutes = int(duration_seconds / 60) if duration_seconds > 0 else 0
+            total_time_minutes += duration_minutes
+            
+            # Calculate calories for breakdown (analysis activity)
+            calories = int(duration_minutes * 4)  # 4 calories per minute for analysis
+            total_kcal += calories
+        
+        return total_kcal, total_time_minutes, total_steps, stars_earned
+        
+    except Exception as e:
+        logging.error(f"Error calculating fitness metrics: {e}")
+        return 0, 0, 0, 0
 
 @stats_router.post('/api/stats/update')
 async def update_my_stats(
     update: UserStatsUpdateRequest = Body(...),
     user_id: str = Depends(get_current_user_id)
 ):
+    """
+    Update user stats manually (legacy endpoint - stats are now calculated from actual data)
+    """
     db = Database.get_database()
     
     # Calculate total activities
-    total_activities = await calculate_total_activities(db, user_id)
+    total_activities, _, _, _ = await calculate_activity_counts(db, user_id)
     
     update_dict = {
         '$inc': {
@@ -288,7 +344,7 @@ async def update_user_streaks_and_activity_unified(db, user_id: str, activity_ty
 
 class HeatmapResponse(BaseModel):
     date: str
-    sessionsCount: int
+    activitiesCount: int  # Total activities (sessions + challenges + breakdowns)
     isActive: bool
     caloriesBurned: int = 0
 
@@ -297,10 +353,13 @@ async def get_activity_heatmap(
     days: int = 7,
     user_id: str = Depends(get_current_user_id)
 ):
+    """
+    Get activity heatmap data showing total activities (sessions + challenges + breakdowns) per day
+    """
     db = Database.get_database()
     stats = await db[user_stats_collection].find_one({'_id': ObjectId(user_id)})
     
-    # Get weekly activity data
+    # Get weekly activity data (this already tracks total activities)
     weekly_activity = stats.get('weeklyActivity', []) if stats else []
     activity_map = {activity['date']: activity.get('activitiesCount', activity.get('sessionsCount', 0)) for activity in weekly_activity}
     
@@ -327,39 +386,54 @@ async def get_activity_heatmap(
         }
     }).to_list(1000)
     
-    # Calculate calories per day
+    # Query dance breakdowns in the date range
+    dance_breakdowns = await db[dance_breakdowns_collection].find({
+        "userId": ObjectId(user_id),
+        "success": True,
+        "createdAt": {
+            "$gte": datetime.combine(start_date, datetime.min.time()),
+            "$lt": datetime.combine(today + timedelta(days=1), datetime.min.time())
+        }
+    }).to_list(1000)
+    
+    # Calculate calories per day (only from sessions)
     calories_per_day = {}
     for session in sessions:
         session_date = session['startTime'].date().strftime('%Y-%m-%d')
         calories = session.get('caloriesBurned', 0) or 0
         calories_per_day[session_date] = calories_per_day.get(session_date, 0) + calories
     
-    # Calculate sessions count per day (including challenges)
-    sessions_count_per_day = {}
+    # Calculate total activities count per day (sessions + challenges + breakdowns)
+    activities_count_per_day = {}
     
     # Count regular sessions
     for session in sessions:
         session_date = session['startTime'].date().strftime('%Y-%m-%d')
-        sessions_count_per_day[session_date] = sessions_count_per_day.get(session_date, 0) + 1
+        activities_count_per_day[session_date] = activities_count_per_day.get(session_date, 0) + 1
     
     # Count challenge submissions
     for submission in challenge_submissions:
         submitted_at = submission.get('timestamps', {}).get('submittedAt')
         if submitted_at:
             submission_date = submitted_at.date().strftime('%Y-%m-%d')
-            sessions_count_per_day[submission_date] = sessions_count_per_day.get(submission_date, 0) + 1
+            activities_count_per_day[submission_date] = activities_count_per_day.get(submission_date, 0) + 1
     
-    # Generate last N days with calories data
+    # Count dance breakdowns
+    for breakdown in dance_breakdowns:
+        breakdown_date = breakdown['createdAt'].date().strftime('%Y-%m-%d')
+        activities_count_per_day[breakdown_date] = activities_count_per_day.get(breakdown_date, 0) + 1
+    
+    # Generate last N days with activities and calories data
     result = []
     for i in range(days - 1, -1, -1):  # Reverse order to get oldest to newest
         date = today - timedelta(days=i)
         date_str = date.strftime('%Y-%m-%d')
-        sessions_count = sessions_count_per_day.get(date_str, 0)  # Use actual count instead of weeklyActivity
+        activities_count = activities_count_per_day.get(date_str, 0)  # Total activities for this day
         calories_burned = calories_per_day.get(date_str, 0)
         result.append(HeatmapResponse(
             date=date_str,
-            sessionsCount=sessions_count,
-            isActive=sessions_count > 0,
+            activitiesCount=activities_count,  # Total activities (sessions + challenges + breakdowns)
+            isActive=activities_count > 0,
             caloriesBurned=calories_burned
         ))
     

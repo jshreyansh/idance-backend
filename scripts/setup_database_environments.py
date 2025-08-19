@@ -160,6 +160,7 @@ async def create_indexes_for_all_environments(db):
             users_collection = f"users{env_suffix}"
             await db[users_collection].create_index([("auth.email", 1)], unique=True, sparse=True)
             await db[users_collection].create_index([("auth.providerId", 1)], sparse=True)
+            await db[users_collection].create_index([("profile.username", 1)], unique=True, sparse=True)
             
             # User stats indexes (skip unique constraint for now due to data issues)
             user_stats_collection = f"user_stats{env_suffix}"
