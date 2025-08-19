@@ -36,6 +36,8 @@ app.add_middleware(
         "https://androidbuild.d27rf5148zvtld.amplifyapp.com",
         "https://movesai.club",
         "https://www.movesai.club",
+        "https://dansync.xyz",        # ✅ Add this
+        "https://www.dansync.xyz", 
         # Add more production domains as needed
     ],
     allow_credentials=True,
