@@ -30,12 +30,13 @@ async def start_session(
     user = await db[users_collection].find_one({'_id': ObjectId(user_id)})
     if not user:
         raise HTTPException(status_code=404, detail='User not found')
-    profile = user.get('profile', {}) or {}
+    profile = user.get('profile') or {}
+    location_data = profile.get('location') or {}
     userProfile = {
         'displayName': profile.get('displayName', ''),
         'avatarUrl': profile.get('avatarUrl', ''),
         'isPro': user.get('isPro', False),
-        'location': profile.get('location', {}).get('city', '') if profile.get('location') else ''
+        'location': location_data.get('city', '')
     }
     
     # Check if user already had a session today
@@ -262,12 +263,15 @@ async def get_public_feed(style: str = None, location: str = None, skip: int = 0
         s['userId'] = str(s['userId'])
         user = user_map.get(s['userId'])
         if user:
-            profile = user.get('profile', {})
+            # Handle cases where profile might be None or missing
+            profile = user.get('profile') or {}
+            location_data = profile.get('location') or {}
+            
             s['userProfile'] = {
                 'displayName': profile.get('displayName', ''),
                 'avatarUrl': profile.get('avatarUrl', ''),
                 'isPro': user.get('isPro', False),
-                'location': profile.get('location', {}).get('city', '')
+                'location': location_data.get('city', '')
             }
         else:
             s['userProfile'] = {'displayName': '', 'avatarUrl': '', 'isPro': False, 'location': ''}
@@ -327,12 +331,15 @@ async def get_session_likers(
     for like in likes:
         user = user_map.get(like['userId'])
         if user:
-            profile = user.get('profile', {})
+            # Handle cases where profile might be None or missing
+            profile = user.get('profile') or {}
+            location_data = profile.get('location') or {}
+            
             result.append({
                 'userId': str(user['_id']),
                 'displayName': profile.get('displayName', ''),
                 'avatarUrl': profile.get('avatarUrl', ''),
                 'isPro': user.get('isPro', False),
-                'location': profile.get('location', {}).get('city', '')
+                'location': location_data.get('city', '')
             })
     return result 
