@@ -1,7 +1,10 @@
 absl-py==2.3.1
+addict==2.4.0
 aiohappyeyeballs==2.6.1
 aiohttp==3.12.15
 aiosignal==1.4.0
+aliyun-python-sdk-core==2.16.0
+aliyun-python-sdk-kms==2.16.5
 annotated-types==0.7.0
 anyio==3.7.1
 attrs==25.3.0
@@ -15,7 +18,9 @@ certifi==2025.7.14
 cffi==1.17.1
 charset-normalizer==3.4.2
 click==8.2.1
+colorama==0.4.6
 contourpy==1.3.3
+crcmod==1.7
 cryptography==45.0.5
 cycler==0.12.1
 decorator==5.2.1
@@ -26,9 +31,11 @@ ecdsa==0.19.1
 email_validator==2.2.0
 fastapi==0.116.0
 ffmpeg-python==0.2.0
+filelock==3.14.0
 flatbuffers==25.2.10
 fonttools==4.59.0
 frozenlist==1.7.0
+fsspec==2025.7.0
 future==1.0.0
 google-auth==2.40.3
 google-auth-oauthlib==1.2.2
@@ -38,37 +45,46 @@ httpx==0.28.1
 idna==3.10
 jax==0.4.20
 jaxlib==0.4.20
+Jinja2==3.1.6
 jiter==0.10.0
-jmespath==1.0.1
+jmespath==0.10.0
 joblib==1.5.1
 kiwisolver==1.4.8
 lazy_loader==0.4
 librosa==0.10.1
 limits==5.5.0
 llvmlite==0.44.0
+Markdown==3.8.2
+markdown-it-py==4.0.0
+MarkupSafe==3.0.2
 matplotlib==3.10.3
+mdurl==0.1.2
 mediapipe==0.10.14
-# MMPose dependencies (optional - for future use)
-# openmim>=0.3.0
-# mmpose>=1.1.0
-# mmcv>=2.0.0
-# mmdet>=3.0.0
-# mmengine>=0.8.0
-# torch>=2.0.0
-# torchvision>=0.15.0
 ml_dtypes==0.5.1
+mmcv==2.1.0
+mmdet==3.3.0
+mmengine==0.10.7
+model-index==0.1.11
 motor==3.7.1
+mpmath==1.3.0
 msgpack==1.1.1
 multidict==6.6.4
 mutagen==1.47.0
+networkx==3.5
 numba==0.61.2
 numpy==1.26.4
 oauthlib==3.3.1
 openai==1.3.0
 opencv-contrib-python==4.12.0.88
-opencv-python==4.12.0.88
+opencv-python==4.11.0.86
+opendatalab==0.0.10
+openmim==0.3.9
+openxlab==0.1.2
 opt_einsum==3.4.0
-packaging==25.0
+ordered-set==4.1.0
+oss2==2.17.0
+packaging==24.2
+pandas==2.3.1
 pillow==11.3.0
 platformdirs==4.3.8
 pooch==1.8.2
@@ -76,24 +92,31 @@ propcache==0.3.2
 protobuf==4.25.8
 pyasn1==0.6.1
 pyasn1_modules==0.4.2
+pycocotools==2.0.10
 pycparser==2.22
+pycryptodome==3.23.0
 pycryptodomex==3.23.0
 pydantic==2.11.7
 pydantic_core==2.33.2
+Pygments==2.19.2
 PyJWT==2.10.1
 pymongo==4.13.2
 pyparsing==3.2.3
 python-dateutil==2.9.0.post0
 python-dotenv==1.1.1
 python-jose==3.5.0
+pytz==2023.4
+PyYAML==6.0.2
 redis==5.0.1
-requests==2.32.4
+requests==2.28.2
 requests-oauthlib==2.0.0
+rich==13.4.2
 rsa==4.9.1
 ruptures==1.1.7
 s3transfer==0.9.0
 scikit-learn==1.7.1
 scipy==1.11.4
+shapely==2.1.1
 six==1.17.0
 slowapi==0.1.9
 sniffio==1.3.1
@@ -101,13 +124,21 @@ sounddevice==0.5.2
 soundfile==0.13.1
 soxr==0.5.0.post1
 starlette==0.46.2
+sympy==1.14.0
+tabulate==0.9.0
+termcolor==3.1.0
+terminaltables==3.1.10
 threadpoolctl==3.6.0
-tqdm==4.67.1
+torch==2.8.0
+torchvision==0.23.0
+tqdm==4.65.2
 typing-inspection==0.4.1
 typing_extensions==4.14.1
-urllib3==2.5.0
+tzdata==2025.2
+urllib3==1.26.20
 uvicorn==0.35.0
 websockets==15.0.1
 wrapt==1.17.3
+yapf==0.43.0
 yarl==1.20.1
 yt-dlp==2025.7.21
