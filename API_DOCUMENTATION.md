@@ -989,6 +989,96 @@ Authorization: Bearer <access_token>
 
 ---
 
+## 🎯 Challenge Practice Scoring
+
+### **POST /api/challenges/{challenge_id}/practice-score**
+**Description:** Score a practice attempt for a challenge (video not saved)  
+**Authentication:** Required  
+
+**Request Body:**
+```
+Content-Type: multipart/form-data
+
+practice_video: [video file]
+```
+
+**File Requirements:**
+- **Format**: mp4, mov, avi, mkv, webm
+- **Size**: Maximum 100MB
+- **Note**: Practice videos are analyzed temporarily and not saved
+
+**Response:**
+```json
+{
+    "score": 78,
+    "breakdown": {
+        "technique": 20,
+        "rhythm": 25,
+        "expression": 16,
+        "difficulty": 17
+    },
+    "feedback": "Good performance! Focus on cleaner movements...",
+    "overall_rating": "Good",
+    "improvement_suggestions": [
+        "Focus on cleaner movement execution and body control",
+        "Work on timing and beat synchronization",
+        "Practice the routine multiple times to improve consistency"
+    ],
+    "practice_metrics": {
+        "video_duration": 45.2,
+        "analysis_timestamp": "2025-01-25T10:30:00Z"
+    },
+    "practice_timestamp": "2025-01-25T10:30:00Z",
+    "challenge_id": "68877865e63d6bd72cdda440",
+    "user_id": "68877865e63d6bd72cdda441",
+    "is_practice": true,
+    "message": "Practice attempt scored successfully"
+}
+```
+
+### **GET /api/challenges/{challenge_id}/practice-info**
+**Description:** Get practice scoring information for a challenge  
+**Authentication:** Required  
+
+**Response:**
+```json
+{
+    "challenge_id": "68877865e63d6bd72cdda440",
+    "challenge_title": "Hip Hop Challenge",
+    "challenge_description": "Show your best hip hop moves!",
+    "has_reference_video": true,
+    "practice_scoring_available": true,
+    "max_practice_video_size_mb": 100,
+    "supported_video_formats": ["mp4", "mov", "avi", "mkv", "webm"],
+    "scoring_categories": ["technique", "rhythm", "expression", "difficulty"],
+    "user_has_submitted": false,
+    "practice_tips": [
+        "Record your practice attempts to track improvement",
+        "Focus on one scoring category at a time",
+        "Compare your practice scores to identify areas for improvement",
+        "Practice multiple times before final submission"
+    ]
+}
+```
+
+### **GET /api/challenges/{challenge_id}/practice-history**
+**Description:** Get practice history information  
+**Authentication:** Required  
+
+**Response:**
+```json
+{
+    "challenge_id": "68877865e63d6bd72cdda440",
+    "user_id": "68877865e63d6bd72cdda441",
+    "message": "Practice attempts are not stored for privacy. Each practice session provides immediate feedback for improvement.",
+    "practice_history_available": false,
+    "privacy_note": "Practice videos are analyzed temporarily and not saved to protect user privacy",
+    "recommendation": "Take notes of your scores and improvement areas during practice sessions"
+}
+```
+
+---
+
 ## 🔧 Error Handling
 
 All endpoints return consistent error responses:

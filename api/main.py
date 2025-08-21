@@ -6,6 +6,7 @@ from services.feed.service import feed_router
 from services.challenge.service import challenge_router
 from services.background.router import background_router
 from services.challenge.submission import submission_router
+from services.challenge.practice_router import practice_router
 from services.session.service import session_router
 from services.ai.service import ai_router
 from services.s3.router import s3_router
@@ -52,6 +53,7 @@ app.include_router(feed_router)
 app.include_router(challenge_router)
 app.include_router(background_router)
 app.include_router(submission_router)
+app.include_router(practice_router)
 app.include_router(session_router)
 app.include_router(ai_router)
 app.include_router(s3_router)

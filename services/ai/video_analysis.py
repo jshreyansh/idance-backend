@@ -109,8 +109,19 @@ class VideoAnalysisService:
             raise
     
     async def _download_video(self, video_url: str) -> Optional[str]:
-        """Download video to temporary file"""
+        """Download video to temporary file or handle local file"""
         try:
+            # Handle local file paths (file:// protocol)
+            if video_url.startswith('file://'):
+                local_path = video_url[7:]  # Remove 'file://' prefix
+                if os.path.exists(local_path):
+                    logger.info(f"📁 Using local file: {local_path}")
+                    return local_path
+                else:
+                    logger.error(f"❌ Local file not found: {local_path}")
+                    return None
+            
+            # Handle remote URLs
             # Create temporary file
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
             temp_path = temp_file.name

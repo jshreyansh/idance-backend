@@ -1,0 +1,24 @@
+[Unit]
+Description=iDance Backend API Server
+After=network.target
+
+[Service]
+Type=exec
+User=ec2-user
+Group=ec2-user
+WorkingDirectory=/home/ec2-user/idance-backend
+Environment=PATH=/home/ec2-user/idance-backend/venv/bin
+ExecStart=/home/ec2-user/idance-backend/venv/bin/uvicorn api.main:app --host 0.0.0.0 --port 8000
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=idance-backend
+
+# Environment variables (adjust paths as needed)
+Environment=PYTHONPATH=/home/ec2-user/idance-backend
+Environment=ENVIRONMENT=production
+
+[Install]
+WantedBy=multi-user.target 
