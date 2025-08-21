@@ -4,6 +4,10 @@ from infra.mongo import Database
 from datetime import datetime, timedelta
 from bson import ObjectId
 from services.user.service import get_current_user_id
+from services.video_processing.service import video_processing_service
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Environment-aware collection names
 users_collection = Database.get_collection_name('users')
@@ -155,6 +159,43 @@ async def complete_session(
     db = Database.get_database()
     session_id = data.sessionId
     now = datetime.utcnow()
+    
+    # Initialize processing status
+    processing_status = "not_required"
+    processed_video_url = None
+    crop_data_dict = None
+    
+    # Handle video cropping if cropData is provided
+    if data.cropData and data.videoURL:
+        try:
+            logger.info(f"🎬 Processing video cropping for session {session_id}")
+            processing_status = "processing"
+            
+            # Convert crop data to dictionary
+            crop_data_dict = data.cropData.dict()
+            
+            # Generate output file key for processed video
+            timestamp = now.strftime('%Y%m%d_%H%M%S')
+            output_file_key = f"sessions/{user_id}/{session_id}/cropped_{timestamp}.mp4"
+            
+            # Process video cropping
+            processed_video_url = await video_processing_service.crop_video(
+                input_url=data.videoURL,
+                crop_data=crop_data_dict,
+                output_file_key=output_file_key
+            )
+            
+            if processed_video_url:
+                processing_status = "completed"
+                logger.info(f"✅ Video cropping completed for session {session_id}")
+            else:
+                processing_status = "failed"
+                logger.error(f"❌ Video cropping failed for session {session_id}")
+                
+        except Exception as e:
+            processing_status = "failed"
+            logger.error(f"❌ Error in video cropping for session {session_id}: {str(e)}")
+    
     update_fields = {
         "endTime": data.endTime,
         "durationMinutes": data.durationMinutes,
@@ -169,10 +210,16 @@ async def complete_session(
         "highlightText": data.highlightText,
         "tags": data.tags,
         "status": "completed",
-        "updatedAt": now
+        "updatedAt": now,
+        # New fields for video processing
+        "processedVideoURL": processed_video_url,
+        "cropData": crop_data_dict,
+        "processingStatus": processing_status
     }
+    
     # Remove None fields
     update_fields = {k: v for k, v in update_fields.items() if v is not None}
+    
     result = await db[dance_sessions_collection].update_one(
         {"_id": ObjectId(session_id), "userId": ObjectId(user_id)},
         {"$set": update_fields}
@@ -186,7 +233,13 @@ async def complete_session(
         # Update session-specific stats
         await update_user_stats_from_session(db, user_id, session_id)
         
-        return {"message": "Session completed successfully"}
+        response_message = "Session completed successfully"
+        if processing_status == "completed":
+            response_message += " with video processing"
+        elif processing_status == "failed":
+            response_message += " (video processing failed, using original video)"
+        
+        return {"message": response_message}
     else:
         raise HTTPException(status_code=404, detail="Session not found or already completed")
 

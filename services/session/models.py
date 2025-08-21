@@ -1,6 +1,11 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
+
+class CropData(BaseModel):
+    aspectRatio: float
+    videoDimensions: Dict[str, int]  # {"width": 1920, "height": 1080}
+    cropTemplate: str  # "square", "portrait", "landscape"
 
 class SessionStartRequest(BaseModel):
     style: str
@@ -28,6 +33,7 @@ class SessionCompleteRequest(BaseModel):
     rating: Optional[int] = None
     highlightText: Optional[str] = None
     tags: Optional[List[str]] = None
+    cropData: Optional[CropData] = None  # New field for video cropping
 
 class SessionResponse(BaseModel):
     id: str = Field(..., alias="_id")
@@ -41,6 +47,7 @@ class SessionResponse(BaseModel):
     sessionType: str
     videoURL: Optional[str] = None
     videoFileKey: Optional[str] = None
+    processedVideoURL: Optional[str] = None  # New field for cropped video
     thumbnailURL: Optional[str] = None
     thumbnailFileKey: Optional[str] = None
     location: Optional[str] = None
@@ -54,5 +61,7 @@ class SessionResponse(BaseModel):
     remixable: bool
     promptUsed: Optional[str] = None
     inspirationSessionId: Optional[str] = None
+    cropData: Optional[Dict[str, Any]] = None  # New field for crop settings
+    processingStatus: Optional[str] = None  # New field for processing status
     createdAt: datetime
     updatedAt: datetime 

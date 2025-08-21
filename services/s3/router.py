@@ -3,6 +3,7 @@ from services.s3.service import s3_service, generate_session_video_key, generate
 from services.s3.models import VideoUploadRequest, VideoUploadResponse, ThumbnailUploadRequest, ThumbnailUploadResponse, ChallengeVideoUploadRequest, ChallengeVideoUploadResponse, DanceBreakdownVideoUploadRequest, DanceBreakdownVideoUploadResponse
 from services.user.service import get_current_user_id
 from services.rate_limiting.decorators import protected_rate_limit
+from services.video_processing.middleware import video_resizing_middleware
 from infra.mongo import Database
 # Environment-aware collection names
 challenges_collection = Database.get_collection_name('challenges')
@@ -240,4 +241,49 @@ async def get_dance_breakdown_video_upload_url(
         expires_in=upload_data['expires_in'],
         file_url=file_url,
         breakdown_id=breakdown_id
+    )
+
+@s3_router.post('/api/s3/upload/video-with-resize')
+@protected_rate_limit('upload_video')
+async def upload_video_with_resize(
+    http_request: Request,
+    request: VideoUploadRequest = Body(...),
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Upload video with automatic resizing to ensure dimensions are under 600x600
+    This endpoint processes the video server-side and uploads the resized version
+    """
+    # Verify the session exists and belongs to the user
+    db = Database.get_database()
+    session = await db[dance_sessions_collection].find_one({
+        '_id': ObjectId(request.session_id),
+        'userId': ObjectId(user_id)
+    })
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found or not owned by user")
+    
+    # Generate unique file key for the video
+    file_key = generate_session_video_key(
+        user_id=user_id,
+        session_id=request.session_id,
+        file_extension=request.file_extension
+    )
+    
+    # Generate presigned upload URL for original upload
+    upload_data = s3_service.generate_presigned_upload_url(
+        file_key=file_key,
+        content_type=request.content_type
+    )
+    
+    # Get the final file URL
+    file_url = s3_service.get_file_url(file_key)
+    
+    return VideoUploadResponse(
+        upload_url=upload_data['upload_url'],
+        file_key=upload_data['file_key'],
+        content_type=upload_data['content_type'],
+        expires_in=upload_data['expires_in'],
+        file_url=file_url
     ) 

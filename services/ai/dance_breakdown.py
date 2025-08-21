@@ -257,6 +257,10 @@ class DanceBreakdownService:
             import hashlib
             import os
             
+            # Process video through resizing middleware first
+            from services.video_processing.middleware import video_resizing_middleware
+            processed_video_path = await video_resizing_middleware.process_video_file(video_path, cleanup_original=False)
+            
             # Initialize S3 client
             s3_client = boto3.client(
                 's3',
@@ -270,15 +274,15 @@ class DanceBreakdownService:
             url_hash = hashlib.md5(original_url.encode()).hexdigest()[:8]
             file_key = f"dance-breakdowns/{user_id}/{timestamp}_{url_hash}.mp4"
             
-            # Upload to S3
+            # Upload processed video to S3
             bucket_name = os.getenv('S3_BUCKET_NAME', 'idanceshreyansh')
-            s3_client.upload_file(video_path, bucket_name, file_key)
+            s3_client.upload_file(processed_video_path, bucket_name, file_key)
             
             # Generate public URL
             bucket_url = os.getenv('S3_BUCKET_URL', f'https://{bucket_name}.s3.ap-south-1.amazonaws.com')
             video_url = f"{bucket_url}/{file_key}"
             
-            logger.info(f"✅ Video uploaded to S3: {video_url}")
+            logger.info(f"✅ Video uploaded to S3 with resizing: {video_url}")
             return video_url
             
         except Exception as e:

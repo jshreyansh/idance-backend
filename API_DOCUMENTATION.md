@@ -275,6 +275,166 @@ Authorization: Bearer <access_token>
 
 ---
 
+## 🎬 Session Management
+
+### **POST /api/sessions/start**
+**Description:** Start a new dance session  
+**Authentication:** Required  
+
+**Request Body:**
+```json
+{
+    "style": "hip hop",
+    "sessionType": "freestyle",
+    "isPublic": true,
+    "sharedToFeed": false,
+    "remixable": false,
+    "promptUsed": "Dance to the beat",
+    "inspirationSessionId": "68877865e63d6bd72cdda440",
+    "location": "New York",
+    "highlightText": "Amazing session!",
+    "tags": ["energetic", "fun"]
+}
+```
+
+**Response:**
+```json
+{
+    "sessionId": "68877865e63d6bd72cdda440"
+}
+```
+
+### **POST /api/sessions/complete**
+**Description:** Complete a dance session with optional video processing  
+**Authentication:** Required  
+
+**Request Body:**
+```json
+{
+    "sessionId": "68877865e63d6bd72cdda440",
+    "endTime": "2025-01-25T10:30:00Z",
+    "durationMinutes": 15,
+    "caloriesBurned": 120,
+    "videoURL": "https://s3.amazonaws.com/bucket/video.mp4",
+    "videoFileKey": "sessions/user_id/session_id/video.mp4",
+    "thumbnailURL": "https://s3.amazonaws.com/bucket/thumbnail.jpg",
+    "thumbnailFileKey": "sessions/user_id/session_id/thumbnail.jpg",
+    "score": 85,
+    "stars": 4,
+    "rating": 4.5,
+    "highlightText": "Amazing dance session!",
+    "tags": ["hip hop", "energetic"],
+    "cropData": {
+        "aspectRatio": 1.0,
+        "videoDimensions": {"width": 1920, "height": 1080},
+        "cropTemplate": "square"
+    }
+}
+```
+
+**Crop Templates:**
+- `"square"`: Crop to 1:1 aspect ratio
+- `"portrait"`: Crop to 9:16 aspect ratio  
+- `"landscape"`: Crop to 16:9 aspect ratio
+
+**Response:**
+```json
+{
+    "message": "Session completed successfully with video processing"
+}
+```
+
+**Processing Status:**
+- `"not_required"`: No video processing needed
+- `"processing"`: Video is being processed
+- `"completed"`: Video processing successful
+- `"failed"`: Video processing failed (original video used)
+
+### **GET /api/sessions/me**
+**Description:** Get user's dance sessions  
+**Authentication:** Required  
+
+**Response:**
+```json
+[
+    {
+        "_id": "68877865e63d6bd72cdda440",
+        "userId": "68877865e63d6bd72cdda441",
+        "startTime": "2025-01-25T10:00:00Z",
+        "endTime": "2025-01-25T10:30:00Z",
+        "status": "completed",
+        "durationMinutes": 30,
+        "caloriesBurned": 150,
+        "style": "hip hop",
+        "sessionType": "freestyle",
+        "videoURL": "https://s3.amazonaws.com/bucket/video.mp4",
+        "processedVideoURL": "https://s3.amazonaws.com/bucket/cropped_video.mp4",
+        "thumbnailURL": "https://s3.amazonaws.com/bucket/thumbnail.jpg",
+        "score": 85,
+        "stars": 4,
+        "rating": 4.5,
+        "highlightText": "Amazing session!",
+        "tags": ["energetic", "fun"],
+        "isPublic": true,
+        "sharedToFeed": false,
+        "remixable": false,
+        "cropData": {
+            "aspectRatio": 1.0,
+            "videoDimensions": {"width": 1920, "height": 1080},
+            "cropTemplate": "square"
+        },
+        "processingStatus": "completed",
+        "createdAt": "2025-01-25T10:00:00Z",
+        "updatedAt": "2025-01-25T10:30:00Z"
+    }
+]
+```
+
+### **GET /api/sessions/feed**
+**Description:** Get public dance sessions feed  
+**Authentication:** Required  
+
+**Query Parameters:**
+- `style` (optional): Filter by dance style
+- `location` (optional): Filter by location
+- `skip` (optional, default: 0): Number of sessions to skip
+- `limit` (optional, default: 20): Number of sessions to return
+
+**Response:**
+```json
+[
+    {
+        "_id": "68877865e63d6bd72cdda440",
+        "userId": "68877865e63d6bd72cdda441",
+        "userProfile": {
+            "displayName": "Dance Master",
+            "avatarUrl": "https://example.com/avatar.jpg",
+            "isPro": false,
+            "location": "New York"
+        },
+        "startTime": "2025-01-25T10:00:00Z",
+        "endTime": "2025-01-25T10:30:00Z",
+        "durationMinutes": 30,
+        "caloriesBurned": 150,
+        "style": "hip hop",
+        "sessionType": "freestyle",
+        "videoURL": "https://s3.amazonaws.com/bucket/video.mp4",
+        "processedVideoURL": "https://s3.amazonaws.com/bucket/cropped_video.mp4",
+        "thumbnailURL": "https://s3.amazonaws.com/bucket/thumbnail.jpg",
+        "score": 85,
+        "stars": 4,
+        "rating": 4.5,
+        "highlightText": "Amazing session!",
+        "tags": ["energetic", "fun"],
+        "likesCount": 5,
+        "commentsCount": 2,
+        "createdAt": "2025-01-25T10:00:00Z"
+    }
+]
+```
+
+---
+
 ## 🎬 Dance Breakdown System
 
 ### **POST /api/s3/upload/dance-breakdown-video**

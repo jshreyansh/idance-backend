@@ -16,7 +16,7 @@ challenge_submissions_collection = Database.get_collection_name('challenge_submi
 dance_sessions_collection = Database.get_collection_name('dance_sessions')
 
 from services.user.service import get_current_user_id
-from services.ai.pose_analysis import pose_analysis_service
+from services.ai.enhanced_scoring import enhanced_scoring_service
 from services.ai.models import AnalysisRequest
 import logging
 from services.challenge.models import (
@@ -327,8 +327,14 @@ class SubmissionService:
                 target_bpm=None  # Could be extracted from challenge metadata
             )
             
-            # Trigger pose analysis (this will run asynchronously)
-            analysis_result = await pose_analysis_service.analyze_pose(analysis_request)
+            # Trigger enhanced scoring analysis (this will run asynchronously)
+            analysis_result = await enhanced_scoring_service.analyze_challenge_submission(
+                submission_id=submission_id,
+                video_url=video_url,
+                challenge_type=challenge.get("type", "freestyle"),
+                challenge_difficulty=challenge.get("difficulty", "beginner"),
+                target_bpm=None  # Could be extracted from challenge metadata
+            )
             
             # Update submission with analysis results
             await self._update_submission_with_analysis(submission_id, analysis_result)
@@ -337,21 +343,36 @@ class SubmissionService:
             logger.error(f"❌ Error in AI analysis trigger: {e}")
             raise
 
-    async def _update_submission_with_analysis(self, submission_id: str, analysis_result: dict) -> None:
+    async def _update_submission_with_analysis(self, submission_id: str, analysis_result) -> None:
         """Update submission with AI analysis results"""
         try:
             db = self._get_db()
             
-            update_data = {
-                "analysis.status": "completed",
-                "analysis.score": analysis_result.get("total_score"),
-                "analysis.breakdown": analysis_result.get("score_breakdown"),
-                "analysis.feedback": analysis_result.get("feedback"),
-                "analysis.pose_data_url": analysis_result.get("pose_data_url"),
-                "analysis.confidence": analysis_result.get("confidence", 0.0),
-                "timestamps.analyzedAt": datetime.utcnow(),
-                "updatedAt": datetime.utcnow()
-            }
+            # Handle AnalysisData object (from enhanced scoring)
+            if hasattr(analysis_result, 'score') and hasattr(analysis_result, 'status'):
+                # It's an AnalysisData object
+                update_data = {
+                    "analysis.status": analysis_result.status,
+                    "analysis.score": analysis_result.score,
+                    "analysis.breakdown": analysis_result.breakdown,
+                    "analysis.feedback": analysis_result.feedback,
+                    "analysis.pose_data_url": analysis_result.pose_data_url,
+                    "analysis.confidence": analysis_result.confidence,
+                    "timestamps.analyzedAt": datetime.utcnow(),
+                    "updatedAt": datetime.utcnow()
+                }
+            else:
+                # It's a dictionary (legacy support)
+                update_data = {
+                    "analysis.status": "completed",
+                    "analysis.score": analysis_result.get("total_score"),
+                    "analysis.breakdown": analysis_result.get("score_breakdown"),
+                    "analysis.feedback": analysis_result.get("feedback"),
+                    "analysis.pose_data_url": analysis_result.get("pose_data_url"),
+                    "analysis.confidence": analysis_result.get("confidence", 0.0),
+                    "timestamps.analyzedAt": datetime.utcnow(),
+                    "updatedAt": datetime.utcnow()
+                }
             
             # Update submission
             result = await db[challenge_submissions_collection].update_one(

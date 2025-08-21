@@ -56,7 +56,6 @@ class EnhancedDanceScoringService:
                 score=enhanced_scores["total_score"],
                 breakdown=enhanced_scores["breakdown"],
                 feedback=feedback,
-                pose_data_url=pose_result.pose_data_url,
                 confidence=enhanced_scores["confidence"]
             )
             
@@ -72,7 +71,7 @@ class EnhancedDanceScoringService:
         """Calculate enhanced scores using improved algorithms"""
         try:
             # Filter valid frames
-            valid_frames = [f for f in pose_frames if f.confidence > 0.5]
+            valid_frames = [f for f in pose_frames if f.frame_confidence > 0.5]
             
             if len(valid_frames) < 10:
                 logger.warning(f"⚠️ Insufficient valid frames: {len(valid_frames)}")
@@ -280,8 +279,8 @@ class EnhancedDanceScoringService:
             for frame in frames:
                 if frame.keypoints:
                     # Use hip and shoulder points for COM
-                    hip_points = [kp for kp in frame.keypoints if "hip" in kp.keypoint_type.lower()]
-                    shoulder_points = [kp for kp in frame.keypoints if "shoulder" in kp.keypoint_type.lower()]
+                    hip_points = [kp for kp in frame.keypoints if "hip" in kp.keypoint_type]
+                    shoulder_points = [kp for kp in frame.keypoints if "shoulder" in kp.keypoint_type]
                     
                     if hip_points and shoulder_points:
                         all_points = hip_points + shoulder_points
@@ -314,8 +313,8 @@ class EnhancedDanceScoringService:
             for frame in frames:
                 if frame.keypoints:
                     # Check shoulder alignment
-                    left_shoulder = next((kp for kp in frame.keypoints if "left_shoulder" in kp.keypoint_type.lower()), None)
-                    right_shoulder = next((kp for kp in frame.keypoints if "right_shoulder" in kp.keypoint_type.lower()), None)
+                    left_shoulder = next((kp for kp in frame.keypoints if kp.keypoint_type == "left_shoulder"), None)
+                    right_shoulder = next((kp for kp in frame.keypoints if kp.keypoint_type == "right_shoulder"), None)
                     
                     if left_shoulder and right_shoulder:
                         # Check if shoulders are level
@@ -336,8 +335,8 @@ class EnhancedDanceScoringService:
             for frame in frames:
                 if frame.keypoints:
                     # Check spine alignment (shoulder to hip)
-                    left_shoulder = next((kp for kp in frame.keypoints if "left_shoulder" in kp.keypoint_type.lower()), None)
-                    left_hip = next((kp for kp in frame.keypoints if "left_hip" in kp.keypoint_type.lower()), None)
+                    left_shoulder = next((kp for kp in frame.keypoints if kp.keypoint_type == "left_shoulder"), None)
+                    left_hip = next((kp for kp in frame.keypoints if kp.keypoint_type == "left_hip"), None)
                     
                     if left_shoulder and left_hip:
                         # Calculate spine angle
@@ -752,7 +751,7 @@ class EnhancedDanceScoringService:
             frame_confidence = len(valid_frames) / len(total_frames) if total_frames else 0.0
             
             # Average confidence of valid frames
-            avg_confidence = np.mean([f.confidence for f in valid_frames]) if valid_frames else 0.0
+            avg_confidence = np.mean([f.frame_confidence for f in valid_frames]) if valid_frames else 0.0
             
             # Combined confidence
             combined_confidence = (frame_confidence + avg_confidence) / 2

@@ -5,10 +5,11 @@ AI Service Router for pose analysis and scoring endpoints
 
 from fastapi import APIRouter, HTTPException, Depends
 from services.ai.models import AnalysisRequest, AnalysisResponse, DanceBreakdownRequest, DanceBreakdownResponse
-from services.ai.pose_analysis import pose_analysis_service
+from services.ai.enhanced_scoring import enhanced_scoring_service
 from services.ai.dance_breakdown import dance_breakdown_service
 from services.user.service import get_current_user_id
 from typing import Dict
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,8 +27,14 @@ async def analyze_pose(
     try:
         logger.info(f"🎬 AI analysis requested for submission {request.submission_id}")
         
-        # Start pose analysis
-        result = await pose_analysis_service.analyze_pose(request)
+        # Start enhanced scoring analysis
+        result = await enhanced_scoring_service.analyze_challenge_submission(
+            submission_id=request.submission_id,
+            video_url=request.video_url,
+            challenge_type=request.challenge_type,
+            challenge_difficulty="beginner",  # Default difficulty
+            target_bpm=request.target_bpm
+        )
         
         return result
         
@@ -44,7 +51,13 @@ async def get_analysis_status(
     Get current analysis status for a submission
     """
     try:
-        status = await pose_analysis_service.get_analysis_status(submission_id)
+        # Enhanced scoring doesn't have status tracking, return completed status
+        status = AnalysisResponse(
+            submission_id=submission_id,
+            status="completed",
+            progress=1.0,
+            created_at=datetime.utcnow()
+        )
         
         if not status:
             raise HTTPException(status_code=404, detail="Analysis not found")
@@ -76,7 +89,13 @@ async def score_submission(
             challenge_type="freestyle"
         )
         
-        result = await pose_analysis_service.analyze_pose(request)
+        result = await enhanced_scoring_service.analyze_challenge_submission(
+            submission_id=submission_id,
+            video_url="mock_video_url",
+            challenge_type="freestyle",
+            challenge_difficulty="beginner",
+            target_bpm=None
+        )
         
         return {
             "submission_id": submission_id,
@@ -168,7 +187,7 @@ async def ai_health():
     return {
         "status": "healthy",
         "service": "ai_pose_analysis",
-        "active_analyses": len(pose_analysis_service.analysis_queue),
+        "active_analyses": 0,  # Enhanced scoring doesn't use queue
         "version": "1.0.0",
         "features": [
             "pose_analysis",
