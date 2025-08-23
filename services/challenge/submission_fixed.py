@@ -498,7 +498,8 @@ class SubmissionService:
             # Check if it's an S3 file key
             elif video_file.startswith('challenges/'):
                 # It's an S3 file key, construct the URL
-                file_url = f"https://idanceshreyansh.s3.ap-south-1.amazonaws.com/{video_file}"
+                bucket_url = os.getenv('S3_BUCKET_URL', 'https://idanceshreyansh.s3.ap-south-1.amazonaws.com')
+                file_url = f"{bucket_url}/{video_file}"
                 return VideoData(
                     url=file_url,
                     file_key=video_file,
