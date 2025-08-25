@@ -11,6 +11,7 @@ import tempfile
 import subprocess
 import hashlib
 import boto3
+import requests
 from datetime import datetime
 from typing import Optional
 from botocore.exceptions import ClientError
@@ -278,8 +279,8 @@ class BackgroundVideoProcessor:
             logger.info(f"🎯 Starting background processing for demo video: {challenge_id}")
             logger.info(f"📹 Video URL: {video_url}")
             
-            # Step 1: Download video from S3 (same as sessions)
-            temp_video_path = await self.download_from_s3(video_url)
+            # Step 1: Download video from S3 (enhanced for temporary bucket approach)
+            temp_video_path = await self.download_demo_video_from_s3(video_url)
             
             if not temp_video_path:
                 logger.error(f"❌ Failed to download demo video: {video_url}")
@@ -302,6 +303,104 @@ class BackgroundVideoProcessor:
         finally:
             # Clean up temporary files
             self._cleanup_temp_files([temp_video_path, processed_video_path])
+    
+    async def download_demo_video_from_s3(self, video_url: str) -> Optional[str]:
+        """Download demo video from S3 with enhanced error handling for temporary bucket approach"""
+        try:
+            logger.info(f"📥 Downloading demo video from S3: {video_url}")
+            
+            # Extract file key from URL
+            file_key = self._extract_file_key_from_url(video_url)
+            if not file_key:
+                logger.error(f"❌ Could not extract file key from URL: {video_url}")
+                return None
+            
+            logger.info(f"📁 Extracted file key: {file_key}")
+            
+            # Try multiple download approaches
+            temp_video_path = None
+            
+            # Approach 1: Try direct S3 download (for same bucket)
+            try:
+                temp_video_path = await self._download_from_s3_direct(file_key)
+                if temp_video_path:
+                    logger.info(f"✅ Demo video downloaded successfully via direct S3: {temp_video_path}")
+                    return temp_video_path
+            except Exception as e:
+                logger.warning(f"⚠️ Direct S3 download failed: {str(e)}")
+            
+            # Approach 2: Try HTTP download (for public URLs)
+            try:
+                temp_video_path = await self._download_via_http(video_url)
+                if temp_video_path:
+                    logger.info(f"✅ Demo video downloaded successfully via HTTP: {temp_video_path}")
+                    return temp_video_path
+            except Exception as e:
+                logger.warning(f"⚠️ HTTP download failed: {str(e)}")
+            
+            logger.error(f"❌ All download methods failed for demo video: {video_url}")
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ Error in demo video download: {str(e)}")
+            return None
+    
+    async def _download_from_s3_direct(self, file_key: str) -> Optional[str]:
+        """Download file directly from S3 using boto3"""
+        try:
+            import tempfile
+            
+            # Create temporary file
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+            temp_path = temp_file.name
+            temp_file.close()
+            
+            # Download from S3
+            s3_client = self._get_s3_client()
+            s3_client.download_file(self.bucket_name, file_key, temp_path)
+            
+            # Verify file exists and has content
+            if os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+                logger.info(f"📦 Downloaded from bucket: {self.bucket_name}, key: {file_key}")
+                return temp_path
+            else:
+                logger.error(f"❌ Downloaded file is empty or missing: {temp_path}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to download from S3: {str(e)}")
+            return None
+    
+    async def _download_via_http(self, video_url: str) -> Optional[str]:
+        """Download video via HTTP requests"""
+        try:
+            import tempfile
+            import requests
+            
+            # Create temporary file
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+            temp_path = temp_file.name
+            temp_file.close()
+            
+            # Download via HTTP
+            response = requests.get(video_url, stream=True)
+            response.raise_for_status()
+            
+            with open(temp_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    f.write(chunk)
+            
+            # Verify file exists and has content
+            if os.path.exists(temp_path) and os.path.getsize(temp_path) > 0:
+                logger.info(f"📥 Downloaded via HTTP: {video_url}")
+                return temp_path
+            else:
+                logger.error(f"❌ Downloaded file is empty or missing: {temp_path}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to download via HTTP: {str(e)}")
+            return None
     
     async def upload_processed_challenge_video_to_s3(self, video_path: str, user_id: str, submission_id: str, original_url: str) -> str:
         """Upload processed challenge video to S3 (adapted from session processing)"""
