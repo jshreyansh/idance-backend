@@ -152,6 +152,40 @@ class BackgroundVideoProcessor:
         
         logger.info(f"✅ Session video processing queued: {session_id}")
     
+    async def queue_challenge_video_processing(
+        self, 
+        submission_id: str, 
+        video_url: str, 
+        user_id: str
+    ):
+        """Queue challenge submission video for background processing"""
+        logger.info(f"🏆 Queuing challenge video processing: submission={submission_id}, user={user_id}")
+        
+        # For now, process immediately in background task
+        # Later can be replaced with proper job queue (Celery/Redis)
+        asyncio.create_task(self._process_challenge_video_background(
+            submission_id, video_url, user_id
+        ))
+        
+        logger.info(f"✅ Challenge video processing queued: {submission_id}")
+    
+    async def queue_demo_video_processing(
+        self, 
+        challenge_id: str, 
+        video_url: str, 
+        user_id: str
+    ):
+        """Queue challenge demo video for background processing"""
+        logger.info(f"🎯 Queuing demo video processing: challenge={challenge_id}, user={user_id}")
+        
+        # For now, process immediately in background task
+        # Later can be replaced with proper job queue (Celery/Redis)
+        asyncio.create_task(self._process_demo_video_background(
+            challenge_id, video_url, user_id
+        ))
+        
+        logger.info(f"✅ Demo video processing queued: {challenge_id}")
+    
     async def _process_session_video_background(
         self, 
         session_id: str, 
@@ -191,6 +225,140 @@ class BackgroundVideoProcessor:
             # Clean up temporary files
             self._cleanup_temp_files([temp_video_path, processed_video_path])
     
+    async def _process_challenge_video_background(
+        self, 
+        submission_id: str, 
+        video_url: str, 
+        user_id: str
+    ):
+        """Process challenge submission video in background using the same pipeline as sessions"""
+        temp_video_path = None
+        processed_video_path = None
+        
+        try:
+            logger.info(f"🏆 Starting background processing for challenge submission: {submission_id}")
+            logger.info(f"📹 Video URL: {video_url}")
+            
+            # Step 1: Download video from S3 (same as sessions)
+            temp_video_path = await self.download_from_s3(video_url)
+            
+            if not temp_video_path:
+                logger.error(f"❌ Failed to download challenge video: {video_url}")
+                return
+            
+            # Step 2: Process through resizing middleware and upload (same as sessions)
+            processed_video_url = await self.upload_processed_challenge_video_to_s3(
+                temp_video_path, user_id, submission_id, video_url
+            )
+            
+            # Step 3: Update challenge submission document with processed URL
+            await self._update_challenge_with_processed_url(submission_id, processed_video_url)
+            
+            logger.info(f"✅ Challenge video processing completed: {submission_id}")
+            logger.info(f"🎯 Processed URL: {processed_video_url}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error processing challenge video {submission_id}: {str(e)}")
+            
+        finally:
+            # Clean up temporary files
+            self._cleanup_temp_files([temp_video_path, processed_video_path])
+    
+    async def _process_demo_video_background(
+        self, 
+        challenge_id: str, 
+        video_url: str, 
+        user_id: str
+    ):
+        """Process challenge demo video in background using the same pipeline"""
+        temp_video_path = None
+        processed_video_path = None
+        
+        try:
+            logger.info(f"🎯 Starting background processing for demo video: {challenge_id}")
+            logger.info(f"📹 Video URL: {video_url}")
+            
+            # Step 1: Download video from S3 (same as sessions)
+            temp_video_path = await self.download_from_s3(video_url)
+            
+            if not temp_video_path:
+                logger.error(f"❌ Failed to download demo video: {video_url}")
+                return
+            
+            # Step 2: Process through resizing middleware and upload
+            processed_video_url = await self.upload_processed_demo_video_to_s3(
+                temp_video_path, user_id, challenge_id, video_url
+            )
+            
+            # Step 3: Update challenge document with processed demo URL
+            await self._update_challenge_demo_with_processed_url(challenge_id, processed_video_url)
+            
+            logger.info(f"✅ Demo video processing completed: {challenge_id}")
+            logger.info(f"🎯 Processed URL: {processed_video_url}")
+            
+        except Exception as e:
+            logger.error(f"❌ Error processing demo video {challenge_id}: {str(e)}")
+            
+        finally:
+            # Clean up temporary files
+            self._cleanup_temp_files([temp_video_path, processed_video_path])
+    
+    async def upload_processed_challenge_video_to_s3(self, video_path: str, user_id: str, submission_id: str, original_url: str) -> str:
+        """Upload processed challenge video to S3 (adapted from session processing)"""
+        try:
+            logger.info(f"📤 Uploading processed challenge video for user: {user_id}, submission: {submission_id}")
+            
+            # Process video through resizing middleware first (same as sessions)
+            processed_video_path = await video_resizing_middleware.process_video_file(video_path, cleanup_original=False)
+            
+            # Generate unique file key for processed challenge video
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            url_hash = hashlib.md5(original_url.encode()).hexdigest()[:8]
+            file_key = f"challenges/{user_id}/submissions/{submission_id}/processed_{timestamp}_{url_hash}.mp4"
+            
+            # Upload processed video to S3
+            s3_client = self._get_s3_client()
+            s3_client.upload_file(processed_video_path, self.bucket_name, file_key)
+            
+            # Generate public URL
+            processed_video_url = f"{self.bucket_url}/{file_key}"
+            
+            logger.info(f"✅ Processed challenge video uploaded to S3: {processed_video_url}")
+            return processed_video_url
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to upload processed challenge video: {str(e)}")
+            # Return original URL as fallback
+            return original_url
+    
+    async def upload_processed_demo_video_to_s3(self, video_path: str, user_id: str, challenge_id: str, original_url: str) -> str:
+        """Upload processed demo video to S3"""
+        try:
+            logger.info(f"📤 Uploading processed demo video for challenge: {challenge_id}")
+            
+            # Process video through resizing middleware first
+            processed_video_path = await video_resizing_middleware.process_video_file(video_path, cleanup_original=False)
+            
+            # Generate unique file key for processed demo video
+            timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            url_hash = hashlib.md5(original_url.encode()).hexdigest()[:8]
+            file_key = f"challenges/{challenge_id}/demo/processed_{timestamp}_{url_hash}.mp4"
+            
+            # Upload processed video to S3
+            s3_client = self._get_s3_client()
+            s3_client.upload_file(processed_video_path, self.bucket_name, file_key)
+            
+            # Generate public URL
+            processed_video_url = f"{self.bucket_url}/{file_key}"
+            
+            logger.info(f"✅ Processed demo video uploaded to S3: {processed_video_url}")
+            return processed_video_url
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to upload processed demo video: {str(e)}")
+            # Return original URL as fallback
+            return original_url
+    
     async def _update_session_with_processed_url(
         self, 
         session_id: str, 
@@ -213,6 +381,54 @@ class BackgroundVideoProcessor:
                 
         except Exception as e:
             logger.error(f"❌ Failed to update session {session_id}: {str(e)}")
+            raise
+    
+    async def _update_challenge_with_processed_url(
+        self, 
+        submission_id: str, 
+        processed_url: str
+    ):
+        """Update challenge submission document with processed video URL"""
+        try:
+            db = Database.get_database()
+            collection_name = Database.get_collection_name('challenge_submissions')
+            
+            result = await db[collection_name].update_one(
+                {"_id": ObjectId(submission_id)},
+                {"$set": {"video.processed_url": processed_url}}
+            )
+            
+            if result.modified_count > 0:
+                logger.info(f"✅ Updated challenge submission {submission_id} with processed URL")
+            else:
+                logger.warning(f"⚠️ No challenge submission found to update: {submission_id}")
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to update challenge submission {submission_id}: {str(e)}")
+            raise
+    
+    async def _update_challenge_demo_with_processed_url(
+        self, 
+        challenge_id: str, 
+        processed_url: str
+    ):
+        """Update challenge document with processed demo video URL"""
+        try:
+            db = Database.get_database()
+            collection_name = Database.get_collection_name('challenges')
+            
+            result = await db[collection_name].update_one(
+                {"_id": ObjectId(challenge_id)},
+                {"$set": {"processedDemoVideoURL": processed_url}}
+            )
+            
+            if result.modified_count > 0:
+                logger.info(f"✅ Updated challenge {challenge_id} with processed demo URL")
+            else:
+                logger.warning(f"⚠️ No challenge found to update: {challenge_id}")
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to update challenge {challenge_id}: {str(e)}")
             raise
     
     def _cleanup_temp_files(self, file_paths: list):

@@ -118,7 +118,13 @@ class PracticeScoringService:
             }
     
     async def _get_challenge_reference_video(self, challenge_id: str) -> Optional[str]:
-        """Get the reference video URL for a challenge"""
+        """Get the reference video URL for a challenge (legacy method - kept for compatibility)"""
+        urls = await self._get_all_challenge_video_urls(challenge_id)
+        return urls[0] if urls else None
+    
+    async def _get_all_challenge_video_urls(self, challenge_id: str) -> List[str]:
+        """Get all possible challenge video URLs in priority order for fallback attempts"""
+        urls = []
         try:
             from infra.mongo import Database
             from bson import ObjectId
@@ -128,43 +134,55 @@ class PracticeScoringService:
             
             challenge = await db[challenges_collection].find_one({'_id': ObjectId(challenge_id)})
             
-            if challenge and 'demoVideoFileKey' in challenge:
-                # Try to get presigned URL for S3 access
-                try:
-                    import boto3
-                    from botocore.exceptions import ClientError
-                    
-                    s3_client = boto3.client(
-                        's3',
-                        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
-                        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
-                        region_name=os.getenv('AWS_REGION', 'ap-south-1')
-                    )
-                    
-                    bucket_name = os.getenv('S3_BUCKET_NAME', 'idanceshreyansh')
-                    file_key = challenge['demoVideoFileKey']
-                    
-                    # Generate presigned URL (expires in 1 hour)
-                    presigned_url = s3_client.generate_presigned_url(
-                        'get_object',
-                        Params={'Bucket': bucket_name, 'Key': file_key},
-                        ExpiresIn=3600
-                    )
-                    
-                    logger.info(f"✅ Generated presigned URL for reference video: {file_key}")
-                    return presigned_url
-                    
-                except Exception as s3_error:
-                    logger.warning(f"⚠️ Could not generate presigned URL: {str(s3_error)}")
-                    # Fallback to direct S3 URL
-                    bucket_name = os.getenv('S3_BUCKET_NAME', 'idanceshreyansh')
-                    return f"https://{bucket_name}.s3.amazonaws.com/{challenge['demoVideoFileKey']}"
+            if challenge:
+                # Priority 1: Try processedDemoVideoURL (mobile-optimized)
+                if challenge.get('processedDemoVideoURL'):
+                    logger.info(f"✅ Found processed demo video URL")
+                    urls.append(challenge['processedDemoVideoURL'])
+                
+                # Priority 2: Try demoVideoFileKey with presigned URL
+                if challenge.get('demoVideoFileKey'):
+                    try:
+                        import boto3
+                        from botocore.exceptions import ClientError
+                        
+                        s3_client = boto3.client(
+                            's3',
+                            aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+                            aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+                            region_name=os.getenv('AWS_REGION', 'ap-south-1')
+                        )
+                        
+                        bucket_name = os.getenv('S3_BUCKET_NAME', 'idanceshreyansh')
+                        file_key = challenge['demoVideoFileKey']
+                        
+                        # Generate presigned URL (expires in 1 hour)
+                        presigned_url = s3_client.generate_presigned_url(
+                            'get_object',
+                            Params={'Bucket': bucket_name, 'Key': file_key},
+                            ExpiresIn=3600
+                        )
+                        
+                        logger.info(f"✅ Generated presigned URL for reference video: {file_key}")
+                        urls.append(presigned_url)
+                        
+                    except Exception as s3_error:
+                        logger.warning(f"⚠️ Could not generate presigned URL for file key: {str(s3_error)}")
+                        # Continue to next fallback
+                
+                # Priority 3: Fallback to demoVideoURL (direct URL)
+                if challenge.get('demoVideoURL'):
+                    logger.info(f"✅ Found direct demo video URL as fallback")
+                    urls.append(challenge['demoVideoURL'])
+                
+                if not urls:
+                    logger.warning(f"⚠️ No demo video found for challenge {challenge_id}")
             
-            return None
+            return urls
             
         except Exception as e:
-            logger.error(f"❌ Error getting challenge reference video: {str(e)}")
-            return None
+            logger.error(f"❌ Error getting challenge video URLs: {str(e)}")
+            return []
     
     async def _save_practice_video(self, practice_video: UploadFile) -> str:
         """Save uploaded practice video to temporary file"""
@@ -273,16 +291,24 @@ class PracticeScoringService:
             if not practice_result or not practice_result.pose_frames:
                 raise Exception("Failed to analyze practice video")
             
-            # Try to analyze reference video (handle S3 access issues)
+            # Try to analyze reference video with fallback URLs
             reference_result = None
-            try:
-                reference_result = await video_analyzer.analyze_video(
-                    challenge_video_url, 
-                    f"{practice_submission_id}_reference"
-                )
-            except Exception as e:
-                logger.warning(f"⚠️ Could not analyze reference video: {str(e)}")
-                logger.info("🔄 Falling back to practice-only analysis with enhanced scoring")
+            reference_urls_to_try = await self._get_all_challenge_video_urls(challenge_details.get("challenge_id"))
+            
+            for i, video_url in enumerate(reference_urls_to_try):
+                try:
+                    logger.info(f"🎯 Attempting reference video analysis (attempt {i+1}/{len(reference_urls_to_try)}): {video_url[:100]}...")
+                    reference_result = await video_analyzer.analyze_video(
+                        video_url, 
+                        f"{practice_submission_id}_reference"
+                    )
+                    if reference_result and reference_result.pose_frames:
+                        logger.info(f"✅ Reference video analysis successful with URL {i+1}")
+                        break
+                except Exception as e:
+                    logger.warning(f"⚠️ Reference video attempt {i+1} failed: {str(e)}")
+                    if i == len(reference_urls_to_try) - 1:  # Last attempt
+                        logger.info("🔄 All reference video URLs failed, falling back to practice-only analysis")
             
             if reference_result and reference_result.pose_frames:
                 # Full comparison analysis

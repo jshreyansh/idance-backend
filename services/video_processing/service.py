@@ -168,7 +168,7 @@ class VideoProcessingService:
             
             logger.info(f"📐 Video dimensions: {video_width}x{video_height}, Crop filter: {filter_complex}")
             
-            # Build FFmpeg command
+            # Build FFmpeg command with iOS Safari compatibility
             cmd = [
                 'ffmpeg', '-y',  # Overwrite output file
                 '-i', input_path,  # Input file
@@ -176,8 +176,12 @@ class VideoProcessingService:
                 '-c:v', 'libx264',  # Video codec
                 '-preset', 'medium',  # Encoding preset
                 '-crf', '23',  # Quality setting
+                '-profile:v', 'baseline',  # iOS Safari compatibility
+                '-level', '3.0',  # iOS Safari compatibility
+                '-pix_fmt', 'yuv420p',  # iOS Safari compatibility
                 '-c:a', 'aac',  # Audio codec
                 '-b:a', '128k',  # Audio bitrate
+                '-movflags', '+faststart',  # Web streaming optimization
                 output_path  # Output file
             ]
             

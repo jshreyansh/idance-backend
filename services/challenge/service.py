@@ -14,7 +14,11 @@ users_collection = Database.get_collection_name('users')
 from datetime import datetime, timedelta
 from bson import ObjectId
 from typing import List, Optional
+from services.video_processing.background_service import background_video_processor
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 challenge_router = APIRouter()
 
@@ -80,7 +84,23 @@ class ChallengeService:
         }
         
         result = await self._get_db()[challenges_collection].insert_one(challenge_doc)
-        return str(result.inserted_id)
+        challenge_id = str(result.inserted_id)
+        
+        # Queue background video processing for demo video mobile compatibility (NEW)
+        if demo_video_url:
+            try:
+                await background_video_processor.queue_demo_video_processing(
+                    challenge_id=challenge_id,
+                    video_url=demo_video_url,
+                    user_id=user_id
+                )
+                logger.info(f"🎯 Queued background video processing for demo video: {challenge_id}")
+                logger.info(f"📹 Processing URL: {demo_video_url}")
+            except Exception as e:
+                logger.error(f"❌ Failed to queue demo video processing for challenge {challenge_id}: {str(e)}")
+                # Don't fail the challenge creation if background processing fails to queue
+        
+        return challenge_id
     
     async def get_active_challenge(self) -> Optional[TodayChallengeResponse]:
         """Get today's active challenge"""
@@ -108,12 +128,15 @@ class ChallengeService:
             "challengeId": str(challenge['_id'])
         })
         
+        # Prioritize processed demo video URL for mobile compatibility
+        demo_video_url = challenge.get('processedDemoVideoURL') or challenge['demoVideoURL']
+        
         return TodayChallengeResponse(
             id=str(challenge['_id']),
             title=challenge['title'],
             type=challenge['type'],
             timeRemaining=time_remaining_str,
-            demoVideoURL=challenge['demoVideoURL'],
+            demoVideoURL=demo_video_url,
             points=challenge['points'],
             participantCount=participant_count,
             description=challenge['description'],
@@ -305,6 +328,10 @@ class ChallengeService:
             # Convert _id from ObjectId to string
             challenge['_id'] = str(challenge['_id'])
             
+            # Prioritize processed demo video URL for mobile compatibility
+            if 'processedDemoVideoURL' in challenge and challenge['processedDemoVideoURL']:
+                challenge['demoVideoURL'] = challenge['processedDemoVideoURL']
+            
             # Convert scoringCriteria dict back to ChallengeCriteria object
             if 'scoringCriteria' in challenge and isinstance(challenge['scoringCriteria'], dict):
                 challenge['scoringCriteria'] = ChallengeCriteria(**challenge['scoringCriteria'])
@@ -335,6 +362,10 @@ class ChallengeService:
                 try:
                     # Convert _id from ObjectId to string
                     challenge['_id'] = str(challenge['_id'])
+                    
+                    # Prioritize processed demo video URL for mobile compatibility
+                    if 'processedDemoVideoURL' in challenge and challenge['processedDemoVideoURL']:
+                        challenge['demoVideoURL'] = challenge['processedDemoVideoURL']
                     
                     # Convert scoringCriteria dict back to ChallengeCriteria object
                     if 'scoringCriteria' in challenge and isinstance(challenge['scoringCriteria'], dict):
@@ -656,6 +687,10 @@ class ChallengeService:
                 try:
                     # Convert _id from ObjectId to string
                     challenge['_id'] = str(challenge['_id'])
+                    
+                    # Prioritize processed demo video URL for mobile compatibility
+                    if 'processedDemoVideoURL' in challenge and challenge['processedDemoVideoURL']:
+                        challenge['demoVideoURL'] = challenge['processedDemoVideoURL']
                     
                     # Convert scoringCriteria dict back to ChallengeCriteria object
                     if 'scoringCriteria' in challenge and isinstance(challenge['scoringCriteria'], dict):

@@ -18,7 +18,9 @@ dance_sessions_collection = Database.get_collection_name('dance_sessions')
 from services.user.service import get_current_user_id
 from services.ai.enhanced_scoring import enhanced_scoring_service
 from services.ai.models import AnalysisRequest
+from services.video_processing.background_service import background_video_processor
 import logging
+import os
 from services.challenge.models import (
     UnifiedSubmissionRequest, UnifiedSubmissionResponse, VideoData, AnalysisData, SubmissionMetadata
 )
@@ -218,6 +220,20 @@ class SubmissionService:
                     "$set": {"updatedAt": now}
                 }
             )
+            
+            # Queue background video processing for mobile compatibility (NEW)
+            if video_data.url:
+                try:
+                    await background_video_processor.queue_challenge_video_processing(
+                        submission_id=submission_id,
+                        video_url=video_data.url,
+                        user_id=user_id
+                    )
+                    logger.info(f"🏆 Queued background video processing for challenge submission: {submission_id}")
+                    logger.info(f"📹 Processing URL: {video_data.url}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to queue video processing for challenge submission {submission_id}: {str(e)}")
+                    # Don't fail the submission if background processing fails to queue
             
             # 🚀 Trigger AI analysis automatically
             try:
