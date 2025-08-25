@@ -918,6 +918,33 @@ Authorization: Bearer <access_token>
 }
 ```
 
+### **Background Video Processing**
+**Description:** Automatic video processing for mobile compatibility  
+**Processing:** Background (automatic)
+
+**How it Works:**
+- When users complete sessions with videos, processing happens automatically in the background
+- Videos are optimized for mobile playback using the same pipeline as dance breakdowns
+- No additional API calls required from frontend
+
+**Processing Pipeline:**
+1. **Video Download**: Downloads raw video from S3
+2. **Mobile Optimization**: Resizes to max 600x600 dimensions while maintaining aspect ratio
+3. **Encoding**: Converts to H.264 video + AAC audio for universal compatibility
+4. **Upload**: Stores processed video back to S3
+5. **Database Update**: Updates session with processed video URL
+
+**Response Behavior:**
+- Session completion returns immediately (fast response)
+- Processing happens in background (30-60 seconds)
+- API responses automatically serve processed URLs when available
+- Falls back to raw video if processing fails
+
+**Status Tracking:**
+- `processedVideoURL` field populated when processing completes
+- API responses prioritize processed URLs over raw URLs
+- Mobile apps automatically get optimized videos
+
 ---
 
 ## 📰 Feed System

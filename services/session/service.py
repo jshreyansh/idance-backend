@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 from services.user.service import get_current_user_id
 from services.video_processing.service import video_processing_service
+from services.video_processing.background_service import background_video_processor
 import logging
 
 logger = logging.getLogger(__name__)
@@ -226,6 +227,26 @@ async def complete_session(
     )
     
     if result.modified_count > 0:
+        # Queue background video processing for mobile compatibility (NEW)
+        video_url_to_process = None
+        if processed_video_url:  # If cropping was done, process the cropped video
+            video_url_to_process = processed_video_url
+        elif data.videoURL:  # If no cropping, process the original video
+            video_url_to_process = data.videoURL
+        
+        if video_url_to_process:
+            try:
+                await background_video_processor.queue_session_video_processing(
+                    session_id=session_id,
+                    video_url=video_url_to_process,
+                    user_id=user_id
+                )
+                logger.info(f"🎬 Queued background video processing for session: {session_id}")
+                logger.info(f"📹 Processing URL: {video_url_to_process}")
+            except Exception as e:
+                logger.error(f"❌ Failed to queue video processing for session {session_id}: {str(e)}")
+                # Don't fail the session completion if background processing fails to queue
+        
         # Update user stats and streaks using unified function
         from services.user.service import update_user_streaks_and_activity_unified
         await update_user_streaks_and_activity_unified(db, user_id, "session")

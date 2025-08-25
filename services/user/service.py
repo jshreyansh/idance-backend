@@ -473,6 +473,7 @@ async def get_user_history(
                     "durationMinutes": 1,
                     "caloriesBurned": 1,
                     "videoURL": 1,  # Correct field name
+                    "processedVideoURL": 1,  # Mobile-optimized video URL
                     "thumbnailURL": 1,  # Correct field name
                     "style": 1,
                     "score": 1,
@@ -492,8 +493,8 @@ async def get_user_history(
                 if 'userId' in session and isinstance(session['userId'], ObjectId):
                     session['userId'] = str(session['userId'])
                 
-                # Add video URLs to the response
-                session['videoUrl'] = session.get('videoURL', '')
+                # Add video URLs to the response - prioritize processed video for mobile compatibility
+                session['videoUrl'] = session.get('processedVideoURL') or session.get('videoURL', '')
                 session['thumbnailUrl'] = session.get('thumbnailURL', '')
                 
                 session['metadata'] = {
@@ -502,7 +503,7 @@ async def get_user_history(
                     "style": session.get('style', 'Unknown'),
                     "score": session.get('score', 0),
                     "level": 1,
-                    "videoUrl": session.get('videoURL', ''),
+                    "videoUrl": session.get('processedVideoURL') or session.get('videoURL', ''),
                     "thumbnailUrl": session.get('thumbnailURL', '')
                 }
                 all_activities.append(session)
@@ -552,8 +553,10 @@ async def get_user_history(
                 if 'challengeId' in challenge_submission:
                     challenge_submission['challengeId'] = str(challenge_submission['challengeId'])
                 
-                # Add video URLs to the response
-                challenge_submission['videoUrl'] = video_url
+                # Add video URLs to the response - prioritize processed URL for mobile compatibility
+                processed_video_url = video_data.get('processed_url', '') if video_data else ''
+                final_video_url = processed_video_url or video_url
+                challenge_submission['videoUrl'] = final_video_url
                 challenge_submission['thumbnailUrl'] = thumbnail_url
                 
                 challenge_submission['metadata'] = {
@@ -563,7 +566,7 @@ async def get_user_history(
                     "challengeTitle": challenge_submission.get('challenge', {}).get('title', 'Challenge'),
                     "challengeType": challenge_submission.get('challenge', {}).get('type', 'freestyle'),
                     "points": challenge_submission.get('challenge', {}).get('points', 0),
-                    "videoUrl": video_url,
+                    "videoUrl": final_video_url,
                     "thumbnailUrl": thumbnail_url
                 }
                 all_activities.append(challenge_submission)

@@ -122,6 +122,7 @@ class VideoData(BaseModel):
     file_key: str
     duration: Optional[int] = None  # seconds
     size_mb: Optional[float] = None
+    processed_url: Optional[str] = None  # Mobile-optimized video URL
 
 class AnalysisData(BaseModel):
     """Analysis results for submissions"""

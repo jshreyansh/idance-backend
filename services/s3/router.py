@@ -243,6 +243,8 @@ async def get_dance_breakdown_video_upload_url(
         breakdown_id=breakdown_id
     )
 
+
+
 @s3_router.post('/api/s3/upload/video-with-resize')
 @protected_rate_limit('upload_video')
 async def upload_video_with_resize(
