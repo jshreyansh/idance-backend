@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Body, Path
-from services.session.models import SessionStartRequest, SessionCompleteRequest, SessionResponse
+from services.session.models import SessionStartRequest, SessionCompleteRequest, SessionResponse, SessionUpdateRequest
 from infra.mongo import Database
 from datetime import datetime, timedelta
 from bson import ObjectId
@@ -83,6 +83,97 @@ async def start_session(
     session_doc = {k: v for k, v in session_doc.items() if v is not None}
     result = await db[dance_sessions_collection].insert_one(session_doc)
     return {"sessionId": str(result.inserted_id)}
+
+@session_router.put('/api/sessions/{session_id}/update')
+async def update_session(
+    session_id: str = Path(..., description="Session ID to update"),
+    data: SessionUpdateRequest = Body(...),
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Update session metadata (Instagram-like editing).
+    Allows updates to description and metadata even after completion.
+    Video-related fields cannot be updated after completion.
+    """
+    db = Database.get_database()
+    now = datetime.utcnow()
+    
+    # First, verify the session exists and belongs to the user
+    session = await db[dance_sessions_collection].find_one({
+        "_id": ObjectId(session_id),
+        "userId": ObjectId(user_id)
+    })
+    
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found or access denied")
+    
+    # Check if session is completed to determine update restrictions
+    is_completed = session.get("status") == "completed"
+    
+    # Prepare update fields from request data
+    update_fields = {}
+    
+    # Handle inspirationSessionId conversion to ObjectId
+    if data.inspirationSessionId is not None:
+        try:
+            update_fields["inspirationSessionId"] = ObjectId(data.inspirationSessionId)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid inspirationSessionId format")
+    
+    # Define fields that can be updated after completion (Instagram-like)
+    editable_after_completion = [
+        "highlightText", "tags", "location", "isPublic", "sharedToFeed", "remixable"
+    ]
+    
+    # Define fields that can only be updated before completion
+    pre_completion_only = [
+        "style", "sessionType", "promptUsed", "inspirationSessionId"
+    ]
+    
+    # Add fields that can be updated anytime
+    for field in editable_after_completion:
+        if getattr(data, field) is not None:
+            update_fields[field] = getattr(data, field)
+    
+    # Add fields that can only be updated before completion
+    if not is_completed:
+        for field in pre_completion_only:
+            if getattr(data, field) is not None:
+                update_fields[field] = getattr(data, field)
+    else:
+        # Check if user is trying to update pre-completion fields
+        restricted_fields = []
+        for field in pre_completion_only:
+            if getattr(data, field) is not None:
+                restricted_fields.append(field)
+        
+        if restricted_fields:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Cannot update these fields after completion: {', '.join(restricted_fields)}"
+            )
+    
+    # Add updatedAt timestamp
+    update_fields["updatedAt"] = now
+    
+    # Only update if there are fields to update
+    if not update_fields:
+        return {"message": "No fields to update"}
+    
+    # Perform the update
+    result = await db[dance_sessions_collection].update_one(
+        {"_id": ObjectId(session_id), "userId": ObjectId(user_id)},
+        {"$set": update_fields}
+    )
+    
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Session not found or access denied")
+    
+    if result.modified_count == 0:
+        return {"message": "Session updated (no changes made)"}
+    
+    logger.info(f"✅ Session {session_id} updated successfully by user {user_id}")
+    return {"message": "Session updated successfully"}
 
 async def update_user_streaks_and_activity(db, user_id, today):
     user_stats = await db[user_stats_collection].find_one({'_id': ObjectId(user_id)}) or {}

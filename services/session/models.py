@@ -19,6 +19,20 @@ class SessionStartRequest(BaseModel):
     highlightText: Optional[str] = None
     tags: Optional[List[str]] = None
 
+class SessionUpdateRequest(BaseModel):
+    """Request model for updating session metadata (Instagram-like editing)"""
+    style: Optional[str] = None
+    sessionType: Optional[str] = None
+    isPublic: Optional[bool] = None
+    sharedToFeed: Optional[bool] = None
+    remixable: Optional[bool] = None
+    promptUsed: Optional[str] = None
+    inspirationSessionId: Optional[str] = None
+    location: Optional[str] = None
+    highlightText: Optional[str] = None  # Main description/caption (like Instagram post caption)
+    tags: Optional[List[str]] = None
+    # Note: Video-related fields (videoURL, videoFileKey, etc.) cannot be updated after completion
+
 class SessionCompleteRequest(BaseModel):
     sessionId: str
     endTime: datetime

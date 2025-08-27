@@ -1127,12 +1127,99 @@ class DanceBreakdownService:
             logger.error(f"Error in analyze_all_movements: {str(e)}")
             return {"error": str(e)}
     
+    async def get_breakdown_by_video_url(self, video_url: str) -> Optional[Dict]:
+        """Get existing breakdown by video URL (for caching)"""
+        try:
+            db = self._get_db()
+            
+            # Look for existing breakdown with the same video URL
+            existing_breakdown = await db[dance_breakdowns_collection].find_one({
+                "videoUrl": video_url,
+                "success": True  # Only return successful breakdowns
+            })
+            
+            if existing_breakdown:
+                # Convert ObjectId to string for JSON serialization
+                existing_breakdown['_id'] = str(existing_breakdown['_id'])
+                existing_breakdown['userId'] = str(existing_breakdown['userId'])
+                logger.info(f"🎯 Found existing breakdown for URL: {video_url}")
+                return existing_breakdown
+            else:
+                logger.info(f"🆕 No existing breakdown found for URL: {video_url}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Error checking for existing breakdown: {str(e)}")
+            return None
+
+    async def convert_db_breakdown_to_response(self, db_breakdown: Dict, mode: str) -> DanceBreakdownResponse:
+        """Convert database breakdown to DanceBreakdownResponse"""
+        try:
+            # Convert steps back to DanceStep objects
+            dance_steps = []
+            for step_data in db_breakdown.get('steps', []):
+                dance_step = DanceStep(
+                    step_number=step_data.get('step_number', 0),
+                    start_timestamp=step_data.get('start_timestamp', ''),
+                    end_timestamp=step_data.get('end_timestamp', ''),
+                    step_name=step_data.get('step_name', ''),
+                    global_description=step_data.get('global_description', ''),
+                    description=step_data.get('description', {}),
+                    style_and_history=step_data.get('style_and_history', ''),
+                    spice_it_up=step_data.get('spice_it_up', '')
+                )
+                dance_steps.append(dance_step)
+            
+            # Create response object
+            response = DanceBreakdownResponse(
+                success=True,
+                video_url=db_breakdown.get('videoUrl', ''),
+                playable_video_url=db_breakdown.get('playableVideoUrl', ''),
+                title=db_breakdown.get('title', 'Dance Video Analysis'),
+                duration=db_breakdown.get('duration', 0.0),
+                bpm=db_breakdown.get('bpm'),
+                difficulty_level=db_breakdown.get('difficultyLevel', 'Intermediate'),
+                total_steps=db_breakdown.get('totalSteps', 0),
+                routine_analysis=db_breakdown.get('routineAnalysis', {}),
+                steps=dance_steps,
+                outline_url=db_breakdown.get('outlineUrl', 'http://localhost:8000/videos/default_outline.mp4'),
+                mode=mode
+            )
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"❌ Error converting DB breakdown to response: {str(e)}")
+            raise
+
     async def process_dance_breakdown(self, request: DanceBreakdownRequest, user_id: str) -> DanceBreakdownResponse:
-        """Main method to process dance breakdown from URL or S3 file"""
+        """Main method to process dance breakdown from URL or S3 file with caching"""
         try:
             logger.info(f"🎬 Starting dance breakdown for user: {user_id}")
             logger.info(f"🎬 Video URL: {request.video_url}")
             logger.info(f"🎬 Mode: {request.mode}")
+            
+            # Check for existing breakdown (caching)
+            existing_breakdown = await self.get_breakdown_by_video_url(request.video_url)
+            
+            if existing_breakdown:
+                logger.info(f"🎯 Using cached breakdown for URL: {request.video_url}")
+                
+                # Convert database breakdown to response format
+                cached_response = await self.convert_db_breakdown_to_response(existing_breakdown, request.mode)
+                
+                # Update user stats for accessing cached breakdown
+                try:
+                    db = self._get_db()
+                    from services.user.service import update_user_streaks_and_activity_unified
+                    await update_user_streaks_and_activity_unified(db, user_id, "breakdown")
+                    logger.info(f"✅ Updated user stats for cached breakdown access")
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to update user stats for cached breakdown: {str(e)}")
+                
+                return cached_response
+            
+            logger.info(f"🆕 Processing new breakdown for URL: {request.video_url}")
             
             # Determine if it's a S3 URL or external URL
             if request.video_url.startswith('https://') and ('s3.amazonaws.com' in request.video_url or 'amazonaws.com' in request.video_url):
@@ -1257,7 +1344,7 @@ class DanceBreakdownService:
                 mode=request.mode,
                 error_message=str(e)
             )
-
+    
     async def generate_and_upload_thumbnail(self, video_path: str, user_id: str, original_url: str) -> str:
         """Generate thumbnail from video and upload to S3"""
         try:
@@ -1426,6 +1513,130 @@ class DanceBreakdownService:
         """Get a default thumbnail URL for fallback"""
         # You can replace this with a static image URL from your S3 bucket
         return "https://via.placeholder.com/480x270/cccccc/666666?text=No+Thumbnail"
+
+    async def get_breakdown_statistics(self) -> Dict:
+        """Get statistics about dance breakdowns including cache effectiveness"""
+        try:
+            db = self._get_db()
+            
+            # Get total breakdowns
+            total_breakdowns = await db[dance_breakdowns_collection].count_documents({})
+            
+            # Get successful breakdowns
+            successful_breakdowns = await db[dance_breakdowns_collection].count_documents({"success": True})
+            
+            # Get unique video URLs (for cache effectiveness analysis)
+            unique_videos_pipeline = [
+                {"$group": {"_id": "$videoUrl"}},
+                {"$count": "total"}
+            ]
+            unique_videos_result = await db[dance_breakdowns_collection].aggregate(unique_videos_pipeline).to_list(length=1)
+            unique_videos = unique_videos_result[0]['total'] if unique_videos_result else 0
+            
+            # Get breakdowns by source type
+            youtube_breakdowns = await db[dance_breakdowns_collection].count_documents({
+                "videoUrl": {"$regex": "youtube\\.com|youtu\\.be"}
+            })
+            
+            instagram_breakdowns = await db[dance_breakdowns_collection].count_documents({
+                "videoUrl": {"$regex": "instagram\\.com"}
+            })
+            
+            s3_breakdowns = await db[dance_breakdowns_collection].count_documents({
+                "videoUrl": {"$regex": "s3\\.amazonaws\\.com|amazonaws\\.com"}
+            })
+            
+            # Get recent breakdowns (last 7 days)
+            from datetime import datetime, timedelta
+            week_ago = datetime.utcnow() - timedelta(days=7)
+            recent_breakdowns = await db[dance_breakdowns_collection].count_documents({
+                "createdAt": {"$gte": week_ago}
+            })
+            
+            # Calculate cache efficiency (duplicate URLs indicate cache misses)
+            cache_efficiency = 0
+            if total_breakdowns > 0:
+                cache_efficiency = ((total_breakdowns - unique_videos) / total_breakdowns) * 100
+            
+            stats = {
+                "total_breakdowns": total_breakdowns,
+                "successful_breakdowns": successful_breakdowns,
+                "unique_videos": unique_videos,
+                "cache_efficiency_percentage": round(cache_efficiency, 2),
+                "breakdowns_by_source": {
+                    "youtube": youtube_breakdowns,
+                    "instagram": instagram_breakdowns,
+                    "s3": s3_breakdowns,
+                    "other": total_breakdowns - youtube_breakdowns - instagram_breakdowns - s3_breakdowns
+                },
+                "recent_breakdowns_7_days": recent_breakdowns,
+                "success_rate_percentage": round((successful_breakdowns / total_breakdowns * 100) if total_breakdowns > 0 else 0, 2)
+            }
+            
+            logger.info(f"📊 Breakdown statistics: {stats}")
+            return stats
+            
+        except Exception as e:
+            logger.error(f"❌ Error getting breakdown statistics: {str(e)}")
+            return {
+                "error": str(e),
+                "total_breakdowns": 0,
+                "successful_breakdowns": 0,
+                "unique_videos": 0,
+                "cache_efficiency_percentage": 0
+            }
+
+    async def clear_duplicate_breakdowns(self) -> Dict:
+        """Remove duplicate breakdowns for the same video URL, keeping only the most recent successful one"""
+        try:
+            db = self._get_db()
+            
+            # Find duplicate URLs
+            duplicate_pipeline = [
+                {"$group": {
+                    "_id": "$videoUrl",
+                    "count": {"$sum": 1},
+                    "breakdowns": {"$push": {
+                        "_id": "$_id",
+                        "createdAt": "$createdAt",
+                        "success": "$success"
+                    }}
+                }},
+                {"$match": {"count": {"$gt": 1}}},
+                {"$sort": {"_id": 1}}
+            ]
+            
+            duplicates = await db[dance_breakdowns_collection].aggregate(duplicate_pipeline).to_list(length=None)
+            
+            total_removed = 0
+            
+            for duplicate in duplicates:
+                video_url = duplicate["_id"]
+                breakdowns = duplicate["breakdowns"]
+                
+                # Sort by creation date (newest first) and success status
+                breakdowns.sort(key=lambda x: (x["success"], x["createdAt"]), reverse=True)
+                
+                # Keep the first one (most recent successful, or most recent if none successful)
+                to_keep = breakdowns[0]
+                to_remove = breakdowns[1:]
+                
+                # Remove duplicates
+                for breakdown in to_remove:
+                    await db[dance_breakdowns_collection].delete_one({"_id": breakdown["_id"]})
+                    total_removed += 1
+                
+                logger.info(f"🧹 Cleaned up {len(to_remove)} duplicates for URL: {video_url}")
+            
+            logger.info(f"✅ Removed {total_removed} duplicate breakdowns")
+            return {
+                "total_removed": total_removed,
+                "duplicate_urls_processed": len(duplicates)
+            }
+            
+        except Exception as e:
+            logger.error(f"❌ Error clearing duplicate breakdowns: {str(e)}")
+            return {"error": str(e), "total_removed": 0}
 
 # Create service instance
 dance_breakdown_service = DanceBreakdownService() 

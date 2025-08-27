@@ -304,6 +304,49 @@ Authorization: Bearer <access_token>
 }
 ```
 
+### **PUT /api/sessions/{session_id}/update**
+**Description:** Update session metadata (Instagram-like editing)  
+**Authentication:** Required  
+
+**Parameters:**
+- `session_id` (path): Session ID to update
+
+**Request Body:**
+```json
+{
+    "style": "hip hop",
+    "sessionType": "freestyle",
+    "isPublic": true,
+    "sharedToFeed": false,
+    "remixable": false,
+    "promptUsed": "Dance to the beat",
+    "inspirationSessionId": "68877865e63d6bd72cdda440",
+    "location": "New York",
+    "highlightText": "Amazing session!",
+    "tags": ["energetic", "fun"]
+}
+```
+
+**Response:**
+```json
+{
+    "message": "Session updated successfully"
+}
+```
+
+**Status Codes:**
+- `200` - Success
+- `400` - Cannot update restricted fields after completion
+- `404` - Session not found or access denied
+
+**Notes:**
+- **Instagram-like editing**: Most fields can be updated even after completion
+- **Always editable**: `highlightText`, `tags`, `location`, `isPublic`, `sharedToFeed`, `remixable`
+- **Pre-completion only**: `style`, `sessionType`, `promptUsed`, `inspirationSessionId`
+- **Never editable**: Video-related fields (videoURL, videoFileKey, etc.)
+- All fields are optional - only provided fields will be updated
+- Automatically updates `updatedAt` timestamp
+
 ### **POST /api/sessions/complete**
 **Description:** Complete a dance session with optional video processing  
 **Authentication:** Required  
@@ -476,6 +519,8 @@ Authorization: Bearer <access_token>
 ### **POST /api/ai/dance-breakdown**
 **Description:** Create step-by-step dance breakdown from YouTube/Instagram URL or uploaded video  
 **Authentication:** Required  
+
+**Note:** This endpoint now includes intelligent caching. If the same video URL has been processed before, it will return the cached breakdown instead of reprocessing the video, significantly improving response times and reducing costs.  
 
 **Headers:**
 ```
@@ -727,6 +772,76 @@ Authorization: Bearer <access_token>
         "success_count": 12,
         "failed_count": 3
     }
+}
+```
+
+### **GET /api/ai/dance-breakdowns/statistics**
+**Description:** Get statistics about dance breakdowns including cache effectiveness  
+**Authentication:** Required  
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "statistics": {
+        "total_breakdowns": 150,
+        "successful_breakdowns": 142,
+        "unique_videos": 95,
+        "cache_efficiency_percentage": 36.67,
+        "breakdowns_by_source": {
+            "youtube": 80,
+            "instagram": 45,
+            "s3": 20,
+            "other": 5
+        },
+        "recent_breakdowns_7_days": 25,
+        "success_rate_percentage": 94.67
+    }
+}
+```
+
+### **POST /api/ai/dance-breakdowns/clear-duplicates**
+**Description:** Remove duplicate breakdowns for the same video URL, keeping only the most recent successful one  
+**Authentication:** Required  
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "result": {
+        "total_removed": 15,
+        "duplicate_urls_processed": 8
+    }
+}
+```
+
+### **GET /api/ai/dance-breakdowns/cache-status/{video_url}**
+**Description:** Check if a video URL has an existing breakdown in cache  
+**Authentication:** Required  
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+    "success": true,
+    "video_url": "https://www.youtube.com/watch?v=example",
+    "cached": true,
+    "breakdown_id": "68936a1f93b74bc4f0112219",
+    "created_at": "2025-01-25T14:30:22Z"
 }
 ```
 

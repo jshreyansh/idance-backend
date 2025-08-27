@@ -77,11 +77,16 @@ class EnhancedDanceScoringService:
                 logger.warning(f"⚠️ Insufficient valid frames: {len(valid_frames)}")
                 return self._get_default_scores()
             
-            # Calculate 4-dimensional scores
-            technique_score = self._calculate_technique_score(valid_frames)
-            rhythm_score = self._calculate_rhythm_score(valid_frames, target_bpm)
-            expression_score = self._calculate_expression_score(valid_frames)
-            difficulty_score = self._calculate_difficulty_score(valid_frames, challenge_difficulty)
+            logger.info(f"🎯 Calculating enhanced scores for {len(valid_frames)} valid frames")
+            logger.info(f"🎯 Challenge type: {challenge_type}, difficulty: {challenge_difficulty}")
+            
+            # Calculate 4-dimensional scores with improved algorithms
+            technique_score = self._calculate_enhanced_technique_score(valid_frames)
+            rhythm_score = self._calculate_enhanced_rhythm_score(valid_frames, target_bpm)
+            expression_score = self._calculate_enhanced_expression_score(valid_frames)
+            difficulty_score = self._calculate_enhanced_difficulty_score(valid_frames, challenge_difficulty)
+            
+            logger.info(f"📊 Raw scores - Technique: {technique_score}, Rhythm: {rhythm_score}, Expression: {expression_score}, Difficulty: {difficulty_score}")
             
             # Calculate total score with challenge-specific weights
             total_score = self._calculate_total_score(
@@ -90,6 +95,8 @@ class EnhancedDanceScoringService:
             
             # Calculate confidence
             confidence = self._calculate_analysis_confidence(valid_frames, pose_frames)
+            
+            logger.info(f"🎯 Final total score: {total_score}, Confidence: {confidence:.2f}")
             
             return {
                 "technique_score": technique_score,
@@ -109,137 +116,211 @@ class EnhancedDanceScoringService:
         except Exception as e:
             logger.error(f"❌ Error calculating enhanced scores: {e}")
             return self._get_default_scores()
-    
-    def _calculate_technique_score(self, frames: List[PoseFrame]) -> int:
-        """Calculate technique score (0-100)"""
+
+    def _calculate_enhanced_technique_score(self, frames: List[PoseFrame]) -> int:
+        """Calculate enhanced technique score (0-100) with better algorithms"""
         try:
-            # Balance stability
-            balance_stability = self._analyze_balance_stability(frames)
+            # Enhanced balance stability analysis
+            balance_stability = self._analyze_enhanced_balance_stability(frames)
             
-            # Joint alignment
-            joint_alignment = self._analyze_joint_alignment(frames)
+            # Enhanced joint alignment analysis
+            joint_alignment = self._analyze_enhanced_joint_alignment(frames)
             
-            # Posture quality
-            posture_quality = self._analyze_posture_quality(frames)
+            # Enhanced posture quality analysis
+            posture_quality = self._analyze_enhanced_posture_quality(frames)
             
-            # Movement precision
-            movement_precision = self._analyze_movement_precision(frames)
+            # Enhanced movement precision analysis
+            movement_precision = self._analyze_enhanced_movement_precision(frames)
             
-            # Technique consistency
-            technique_consistency = self._analyze_technique_consistency(frames)
+            # Enhanced technique consistency analysis
+            technique_consistency = self._analyze_enhanced_technique_consistency(frames)
             
-            # Calculate overall technique score
-            technique_metrics = [
-                balance_stability, joint_alignment, posture_quality,
-                movement_precision, technique_consistency
-            ]
+            # Enhanced body control analysis
+            body_control = self._analyze_enhanced_body_control(frames)
             
-            technique_score = int(np.mean(technique_metrics) * 100)
-            return max(0, min(100, technique_score))
+            # Calculate weighted technique score
+            technique_metrics = {
+                "balance": balance_stability * 0.20,
+                "alignment": joint_alignment * 0.15,
+                "posture": posture_quality * 0.15,
+                "precision": movement_precision * 0.20,
+                "consistency": technique_consistency * 0.15,
+                "control": body_control * 0.15
+            }
+            
+            technique_score = int(sum(technique_metrics.values()) * 100)
+            final_score = max(0, min(100, technique_score))
+            
+            logger.info(f"🎯 Enhanced technique analysis:")
+            logger.info(f"   Balance: {balance_stability:.3f} (weighted: {technique_metrics['balance']:.3f})")
+            logger.info(f"   Alignment: {joint_alignment:.3f} (weighted: {technique_metrics['alignment']:.3f})")
+            logger.info(f"   Posture: {posture_quality:.3f} (weighted: {technique_metrics['posture']:.3f})")
+            logger.info(f"   Precision: {movement_precision:.3f} (weighted: {technique_metrics['precision']:.3f})")
+            logger.info(f"   Consistency: {technique_consistency:.3f} (weighted: {technique_metrics['consistency']:.3f})")
+            logger.info(f"   Control: {body_control:.3f} (weighted: {technique_metrics['control']:.3f})")
+            logger.info(f"🎯 Enhanced technique score: {final_score}")
+            
+            return final_score
             
         except Exception as e:
-            logger.error(f"❌ Error calculating technique score: {e}")
+            logger.error(f"❌ Error calculating enhanced technique score: {e}")
             return 50
-    
-    def _calculate_rhythm_score(self, frames: List[PoseFrame], target_bpm: Optional[int]) -> int:
-        """Calculate rhythm score (0-100)"""
+
+    def _calculate_enhanced_rhythm_score(self, frames: List[PoseFrame], target_bpm: Optional[int]) -> int:
+        """Calculate enhanced rhythm score (0-100) with better algorithms"""
         try:
-            # Beat synchronization
-            beat_sync = self._analyze_beat_synchronization(frames, target_bpm)
+            # Enhanced beat synchronization analysis
+            beat_sync = self._analyze_enhanced_beat_synchronization(frames, target_bpm)
             
-            # Movement timing
-            movement_timing = self._analyze_movement_timing(frames)
+            # Enhanced movement timing analysis
+            movement_timing = self._analyze_enhanced_movement_timing(frames)
             
-            # Rhythm consistency
-            rhythm_consistency = self._analyze_rhythm_consistency(frames)
+            # Enhanced rhythm consistency analysis
+            rhythm_consistency = self._analyze_enhanced_rhythm_consistency(frames)
             
-            # Tempo matching
-            tempo_matching = self._analyze_tempo_matching(frames, target_bpm)
+            # Enhanced tempo matching analysis
+            tempo_matching = self._analyze_enhanced_tempo_matching(frames, target_bpm)
             
-            # Musicality
-            musicality = self._analyze_musicality(frames)
+            # Enhanced musicality analysis
+            musicality = self._analyze_enhanced_musicality(frames)
             
-            # Calculate overall rhythm score
-            rhythm_metrics = [
-                beat_sync, movement_timing, rhythm_consistency,
-                tempo_matching, musicality
-            ]
+            # Enhanced dynamic range analysis
+            dynamic_range = self._analyze_enhanced_dynamic_range(frames)
             
-            rhythm_score = int(np.mean(rhythm_metrics) * 100)
-            return max(0, min(100, rhythm_score))
+            # Calculate weighted rhythm score
+            rhythm_metrics = {
+                "beat_sync": beat_sync * 0.25,
+                "timing": movement_timing * 0.20,
+                "consistency": rhythm_consistency * 0.20,
+                "tempo": tempo_matching * 0.15,
+                "musicality": musicality * 0.15,
+                "dynamics": dynamic_range * 0.05
+            }
+            
+            rhythm_score = int(sum(rhythm_metrics.values()) * 100)
+            final_score = max(0, min(100, rhythm_score))
+            
+            logger.info(f"🎯 Enhanced rhythm analysis:")
+            logger.info(f"   Beat sync: {beat_sync:.3f} (weighted: {rhythm_metrics['beat_sync']:.3f})")
+            logger.info(f"   Timing: {movement_timing:.3f} (weighted: {rhythm_metrics['timing']:.3f})")
+            logger.info(f"   Consistency: {rhythm_consistency:.3f} (weighted: {rhythm_metrics['consistency']:.3f})")
+            logger.info(f"   Tempo: {tempo_matching:.3f} (weighted: {rhythm_metrics['tempo']:.3f})")
+            logger.info(f"   Musicality: {musicality:.3f} (weighted: {rhythm_metrics['musicality']:.3f})")
+            logger.info(f"   Dynamics: {dynamic_range:.3f} (weighted: {rhythm_metrics['dynamics']:.3f})")
+            logger.info(f"🎯 Enhanced rhythm score: {final_score}")
+            
+            return final_score
             
         except Exception as e:
-            logger.error(f"❌ Error calculating rhythm score: {e}")
+            logger.error(f"❌ Error calculating enhanced rhythm score: {e}")
             return 50
-    
-    def _calculate_expression_score(self, frames: List[PoseFrame]) -> int:
-        """Calculate expression score (0-100)"""
+
+    def _calculate_enhanced_expression_score(self, frames: List[PoseFrame]) -> int:
+        """Calculate enhanced expression score (0-100) with better algorithms"""
         try:
-            # Movement flow
-            movement_flow = self._analyze_movement_flow(frames)
+            # Enhanced movement flow analysis
+            movement_flow = self._analyze_enhanced_movement_flow(frames)
             
-            # Energy expression
-            energy_expression = self._analyze_energy_expression(frames)
+            # Enhanced energy expression analysis
+            energy_expression = self._analyze_enhanced_energy_expression(frames)
             
-            # Style authenticity
-            style_authenticity = self._analyze_style_authenticity(frames)
+            # Enhanced style authenticity analysis
+            style_authenticity = self._analyze_enhanced_style_authenticity(frames)
             
-            # Performance quality
-            performance_quality = self._analyze_performance_quality(frames)
+            # Enhanced performance quality analysis
+            performance_quality = self._analyze_enhanced_performance_quality(frames)
             
-            # Artistic expression
-            artistic_expression = self._analyze_artistic_expression(frames)
+            # Enhanced artistic expression analysis
+            artistic_expression = self._analyze_enhanced_artistic_expression(frames)
             
-            # Calculate overall expression score
-            expression_metrics = [
-                movement_flow, energy_expression, style_authenticity,
-                performance_quality, artistic_expression
-            ]
+            # Enhanced emotional engagement analysis
+            emotional_engagement = self._analyze_enhanced_emotional_engagement(frames)
             
-            expression_score = int(np.mean(expression_metrics) * 100)
-            return max(0, min(100, expression_score))
+            # Calculate weighted expression score
+            expression_metrics = {
+                "flow": movement_flow * 0.20,
+                "energy": energy_expression * 0.20,
+                "style": style_authenticity * 0.15,
+                "performance": performance_quality * 0.20,
+                "artistic": artistic_expression * 0.15,
+                "emotion": emotional_engagement * 0.10
+            }
+            
+            expression_score = int(sum(expression_metrics.values()) * 100)
+            final_score = max(0, min(100, expression_score))
+            
+            logger.info(f"🎯 Enhanced expression analysis:")
+            logger.info(f"   Flow: {movement_flow:.3f} (weighted: {expression_metrics['flow']:.3f})")
+            logger.info(f"   Energy: {energy_expression:.3f} (weighted: {expression_metrics['energy']:.3f})")
+            logger.info(f"   Style: {style_authenticity:.3f} (weighted: {expression_metrics['style']:.3f})")
+            logger.info(f"   Performance: {performance_quality:.3f} (weighted: {expression_metrics['performance']:.3f})")
+            logger.info(f"   Artistic: {artistic_expression:.3f} (weighted: {expression_metrics['artistic']:.3f})")
+            logger.info(f"   Emotion: {emotional_engagement:.3f} (weighted: {expression_metrics['emotion']:.3f})")
+            logger.info(f"🎯 Enhanced expression score: {final_score}")
+            
+            return final_score
             
         except Exception as e:
-            logger.error(f"❌ Error calculating expression score: {e}")
+            logger.error(f"❌ Error calculating enhanced expression score: {e}")
             return 50
-    
-    def _calculate_difficulty_score(self, frames: List[PoseFrame], challenge_difficulty: str) -> int:
-        """Calculate difficulty score (0-100)"""
+
+    def _calculate_enhanced_difficulty_score(self, frames: List[PoseFrame], challenge_difficulty: str) -> int:
+        """Calculate enhanced difficulty score (0-100) with better algorithms"""
         try:
-            # Movement complexity
-            movement_complexity = self._analyze_movement_complexity(frames)
+            # Enhanced movement complexity analysis
+            movement_complexity = self._analyze_enhanced_movement_complexity(frames)
             
-            # Physical demand
-            physical_demand = self._analyze_physical_demand(frames)
+            # Enhanced physical demand analysis
+            physical_demand = self._analyze_enhanced_physical_demand(frames)
             
-            # Skill requirement
-            skill_requirement = self._analyze_skill_requirement(frames)
+            # Enhanced skill requirement analysis
+            skill_requirement = self._analyze_enhanced_skill_requirement(frames)
             
-            # Coordination difficulty
-            coordination_difficulty = self._analyze_coordination_difficulty(frames)
+            # Enhanced coordination difficulty analysis
+            coordination_difficulty = self._analyze_enhanced_coordination_difficulty(frames)
             
-            # Calculate overall difficulty score
-            difficulty_metrics = [
-                movement_complexity, physical_demand,
-                skill_requirement, coordination_difficulty
-            ]
+            # Enhanced technical difficulty analysis
+            technical_difficulty = self._analyze_enhanced_technical_difficulty(frames)
             
-            difficulty_score = int(np.mean(difficulty_metrics) * 100)
+            # Enhanced innovation analysis
+            innovation = self._analyze_enhanced_innovation(frames)
+            
+            # Calculate weighted difficulty score
+            difficulty_metrics = {
+                "complexity": movement_complexity * 0.25,
+                "physical": physical_demand * 0.20,
+                "skill": skill_requirement * 0.20,
+                "coordination": coordination_difficulty * 0.20,
+                "technical": technical_difficulty * 0.10,
+                "innovation": innovation * 0.05
+            }
+            
+            difficulty_score = int(sum(difficulty_metrics.values()) * 100)
             
             # Adjust based on challenge difficulty
             difficulty_multipliers = {
-                "beginner": 0.7,
+                "beginner": 0.6,
                 "intermediate": 1.0,
-                "advanced": 1.3
+                "advanced": 1.4
             }
             
             multiplier = difficulty_multipliers.get(challenge_difficulty, 1.0)
             adjusted_difficulty = int(difficulty_score * multiplier)
+            final_score = max(0, min(100, adjusted_difficulty))
             
-            return max(0, min(100, adjusted_difficulty))
+            logger.info(f"🎯 Enhanced difficulty analysis:")
+            logger.info(f"   Complexity: {movement_complexity:.3f} (weighted: {difficulty_metrics['complexity']:.3f})")
+            logger.info(f"   Physical: {physical_demand:.3f} (weighted: {difficulty_metrics['physical']:.3f})")
+            logger.info(f"   Skill: {skill_requirement:.3f} (weighted: {difficulty_metrics['skill']:.3f})")
+            logger.info(f"   Coordination: {coordination_difficulty:.3f} (weighted: {difficulty_metrics['coordination']:.3f})")
+            logger.info(f"   Technical: {technical_difficulty:.3f} (weighted: {difficulty_metrics['technical']:.3f})")
+            logger.info(f"   Innovation: {innovation:.3f} (weighted: {difficulty_metrics['innovation']:.3f})")
+            logger.info(f"🎯 Enhanced difficulty score: {final_score} (raw: {difficulty_score}, multiplier: {multiplier})")
+            
+            return final_score
             
         except Exception as e:
-            logger.error(f"❌ Error calculating difficulty score: {e}")
+            logger.error(f"❌ Error calculating enhanced difficulty score: {e}")
             return 50
     
     def _calculate_total_score(self, technique: int, rhythm: int, expression: int, 
@@ -271,9 +352,14 @@ class EnhancedDanceScoringService:
     
     # Enhanced Analysis Methods
     
-    def _analyze_balance_stability(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_balance_stability(self, frames: List[PoseFrame]) -> float:
         """Analyze balance stability"""
         try:
+            # Debug: Check what keypoint types are available
+            if frames and frames[0].keypoints:
+                available_keypoints = set(kp.keypoint_type for kp in frames[0].keypoints)
+                logger.info(f"🎯 Available keypoint types: {sorted(available_keypoints)}")
+            
             # Calculate center of mass movement
             com_positions = []
             for frame in frames:
@@ -289,6 +375,7 @@ class EnhancedDanceScoringService:
                         com_positions.append((avg_x, avg_y))
             
             if len(com_positions) < 5:
+                logger.warning(f"⚠️ Insufficient COM positions for balance analysis: {len(com_positions)}")
                 return 0.5
             
             # Calculate stability (lower variance = better balance)
@@ -300,13 +387,17 @@ class EnhancedDanceScoringService:
             
             # Convert to stability score (0-1)
             stability_score = max(0, 1 - (x_variance + y_variance) * 10)
-            return min(1.0, stability_score)
+            final_score = min(1.0, stability_score)
+            
+            logger.info(f"🎯 Balance analysis - COM positions: {len(com_positions)}, X variance: {x_variance:.4f}, Y variance: {y_variance:.4f}, Stability score: {final_score:.3f}")
+            
+            return final_score
             
         except Exception as e:
             logger.error(f"❌ Error analyzing balance stability: {e}")
             return 0.5
     
-    def _analyze_joint_alignment(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_joint_alignment(self, frames: List[PoseFrame]) -> float:
         """Analyze joint alignment"""
         try:
             alignment_scores = []
@@ -328,7 +419,7 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing joint alignment: {e}")
             return 0.5
     
-    def _analyze_posture_quality(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_posture_quality(self, frames: List[PoseFrame]) -> float:
         """Analyze posture quality"""
         try:
             posture_scores = []
@@ -350,7 +441,7 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing posture quality: {e}")
             return 0.5
     
-    def _analyze_movement_precision(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_movement_precision(self, frames: List[PoseFrame]) -> float:
         """Analyze movement precision"""
         try:
             precision_scores = []
@@ -366,7 +457,7 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing movement precision: {e}")
             return 0.5
     
-    def _analyze_technique_consistency(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_technique_consistency(self, frames: List[PoseFrame]) -> float:
         """Analyze technique consistency"""
         try:
             # Calculate variance in key movements
@@ -389,10 +480,11 @@ class EnhancedDanceScoringService:
     
     # Rhythm Analysis Methods
     
-    def _analyze_beat_synchronization(self, frames: List[PoseFrame], target_bpm: Optional[int]) -> float:
+    def _analyze_enhanced_beat_synchronization(self, frames: List[PoseFrame], target_bpm: Optional[int]) -> float:
         """Analyze beat synchronization"""
         try:
             if not target_bpm or len(frames) < 10:
+                logger.warning(f"⚠️ Beat sync analysis - No target BPM or insufficient frames: target_bpm={target_bpm}, frames={len(frames)}")
                 return 0.5
             
             # Calculate movement peaks
@@ -403,6 +495,7 @@ class EnhancedDanceScoringService:
                     movement_magnitudes.append(movement)
             
             if len(movement_magnitudes) < 5:
+                logger.warning(f"⚠️ Beat sync analysis - Insufficient movement data: {len(movement_magnitudes)} movements")
                 return 0.5
             
             # Simple rhythm analysis
@@ -410,13 +503,17 @@ class EnhancedDanceScoringService:
             movement_variance = np.var(movement_magnitudes)
             
             rhythm_score = max(0, 1 - movement_variance * 5)
-            return min(1.0, rhythm_score)
+            final_score = min(1.0, rhythm_score)
+            
+            logger.info(f"🎯 Beat sync analysis - Avg movement: {avg_movement:.4f}, Variance: {movement_variance:.4f}, Score: {final_score:.3f}")
+            
+            return final_score
             
         except Exception as e:
             logger.error(f"❌ Error analyzing beat synchronization: {e}")
             return 0.5
     
-    def _analyze_movement_timing(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_movement_timing(self, frames: List[PoseFrame]) -> float:
         """Analyze movement timing"""
         try:
             timing_scores = []
@@ -431,7 +528,7 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing movement timing: {e}")
             return 0.5
     
-    def _analyze_rhythm_consistency(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_rhythm_consistency(self, frames: List[PoseFrame]) -> float:
         """Analyze rhythm consistency"""
         try:
             movement_patterns = []
@@ -452,7 +549,7 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing rhythm consistency: {e}")
             return 0.5
     
-    def _analyze_tempo_matching(self, frames: List[PoseFrame], target_bpm: Optional[int]) -> float:
+    def _analyze_enhanced_tempo_matching(self, frames: List[PoseFrame], target_bpm: Optional[int]) -> float:
         """Analyze tempo matching"""
         try:
             if not target_bpm:
@@ -483,11 +580,11 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing tempo matching: {e}")
             return 0.5
     
-    def _analyze_musicality(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_musicality(self, frames: List[PoseFrame]) -> float:
         """Analyze musicality"""
         try:
-            rhythm_consistency = self._analyze_rhythm_consistency(frames)
-            movement_flow = self._analyze_movement_flow(frames)
+            rhythm_consistency = self._analyze_enhanced_rhythm_consistency(frames)
+            movement_flow = self._analyze_enhanced_movement_flow(frames)
             
             musicality_score = (rhythm_consistency + movement_flow) / 2
             return musicality_score
@@ -498,7 +595,7 @@ class EnhancedDanceScoringService:
     
     # Expression Analysis Methods
     
-    def _analyze_movement_flow(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_movement_flow(self, frames: List[PoseFrame]) -> float:
         """Analyze movement flow"""
         try:
             flow_scores = []
@@ -513,7 +610,7 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing movement flow: {e}")
             return 0.5
     
-    def _analyze_energy_expression(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_energy_expression(self, frames: List[PoseFrame]) -> float:
         """Analyze energy expression"""
         try:
             energy_scores = []
@@ -529,16 +626,16 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing energy expression: {e}")
             return 0.5
     
-    def _analyze_style_authenticity(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_style_authenticity(self, frames: List[PoseFrame]) -> float:
         """Analyze style authenticity"""
         return 0.7  # Placeholder - would need style-specific analysis
     
-    def _analyze_performance_quality(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_performance_quality(self, frames: List[PoseFrame]) -> float:
         """Analyze performance quality"""
         try:
-            technique_consistency = self._analyze_technique_consistency(frames)
-            movement_flow = self._analyze_movement_flow(frames)
-            energy_expression = self._analyze_energy_expression(frames)
+            technique_consistency = self._analyze_enhanced_technique_consistency(frames)
+            movement_flow = self._analyze_enhanced_movement_flow(frames)
+            energy_expression = self._analyze_enhanced_energy_expression(frames)
             
             performance_score = (technique_consistency + movement_flow + energy_expression) / 3
             return performance_score
@@ -547,7 +644,7 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing performance quality: {e}")
             return 0.5
     
-    def _analyze_artistic_expression(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_artistic_expression(self, frames: List[PoseFrame]) -> float:
         """Analyze artistic expression"""
         try:
             creativity_scores = []
@@ -562,9 +659,90 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing artistic expression: {e}")
             return 0.5
     
+    def _analyze_enhanced_emotional_engagement(self, frames: List[PoseFrame]) -> float:
+        """Analyze emotional engagement"""
+        return 0.7  # Placeholder - would need emotion-specific analysis
+    
+    def _analyze_enhanced_body_control(self, frames: List[PoseFrame]) -> float:
+        """Analyze enhanced body control"""
+        try:
+            control_scores = []
+            for i in range(1, len(frames)):
+                if frames[i].keypoints and frames[i-1].keypoints:
+                    # Analyze smooth transitions between poses
+                    transition_smoothness = self._calculate_transition_smoothness(frames[i-1], frames[i])
+                    control_scores.append(transition_smoothness)
+            
+            return np.mean(control_scores) if control_scores else 0.5
+            
+        except Exception as e:
+            logger.error(f"❌ Error analyzing enhanced body control: {e}")
+            return 0.5
+
+    def _analyze_enhanced_dynamic_range(self, frames: List[PoseFrame]) -> float:
+        """Analyze enhanced dynamic range"""
+        try:
+            movement_ranges = []
+            for frame in frames:
+                if frame.keypoints:
+                    # Calculate range of motion
+                    motion_range = self._calculate_motion_range(frame)
+                    movement_ranges.append(motion_range)
+            
+            if not movement_ranges:
+                return 0.5
+            
+            # Higher variance in movement range = better dynamics
+            dynamic_score = min(1.0, np.std(movement_ranges) * 10)
+            return dynamic_score
+            
+        except Exception as e:
+            logger.error(f"❌ Error analyzing enhanced dynamic range: {e}")
+            return 0.5
+
+    def _analyze_enhanced_technical_difficulty(self, frames: List[PoseFrame]) -> float:
+        """Analyze enhanced technical difficulty"""
+        try:
+            technical_scores = []
+            for i in range(1, len(frames)):
+                if frames[i].keypoints and frames[i-1].keypoints:
+                    # Analyze technical complexity of transitions
+                    technical_complexity = self._calculate_technical_complexity(frames[i-1], frames[i])
+                    technical_scores.append(technical_complexity)
+            
+            return np.mean(technical_scores) if technical_scores else 0.5
+            
+        except Exception as e:
+            logger.error(f"❌ Error analyzing enhanced technical difficulty: {e}")
+            return 0.5
+
+    def _analyze_enhanced_innovation(self, frames: List[PoseFrame]) -> float:
+        """Analyze enhanced innovation"""
+        try:
+            # Analyze uniqueness of movement patterns
+            movement_patterns = []
+            for i in range(1, len(frames)):
+                if frames[i].keypoints and frames[i-1].keypoints:
+                    pattern = self._extract_movement_pattern(frames[i-1], frames[i])
+                    movement_patterns.append(pattern)
+            
+            if len(movement_patterns) < 5:
+                return 0.5
+            
+            # Calculate pattern diversity
+            unique_patterns = len(set(movement_patterns))
+            total_patterns = len(movement_patterns)
+            
+            innovation_score = min(1.0, unique_patterns / total_patterns * 2)
+            return innovation_score
+            
+        except Exception as e:
+            logger.error(f"❌ Error analyzing enhanced innovation: {e}")
+            return 0.5
+
     # Difficulty Analysis Methods
     
-    def _analyze_movement_complexity(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_movement_complexity(self, frames: List[PoseFrame]) -> float:
         """Analyze movement complexity"""
         try:
             complexity_scores = []
@@ -579,7 +757,7 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing movement complexity: {e}")
             return 0.5
     
-    def _analyze_physical_demand(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_physical_demand(self, frames: List[PoseFrame]) -> float:
         """Analyze physical demand"""
         try:
             demand_scores = []
@@ -595,7 +773,7 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing physical demand: {e}")
             return 0.5
     
-    def _analyze_skill_requirement(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_skill_requirement(self, frames: List[PoseFrame]) -> float:
         """Analyze skill requirement"""
         try:
             skill_scores = []
@@ -611,7 +789,7 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing skill requirement: {e}")
             return 0.5
     
-    def _analyze_coordination_difficulty(self, frames: List[PoseFrame]) -> float:
+    def _analyze_enhanced_coordination_difficulty(self, frames: List[PoseFrame]) -> float:
         """Analyze coordination difficulty"""
         try:
             coordination_scores = []
@@ -626,7 +804,47 @@ class EnhancedDanceScoringService:
             logger.error(f"❌ Error analyzing coordination difficulty: {e}")
             return 0.5
     
-    # Helper Methods
+    def _analyze_enhanced_technical_difficulty(self, frames: List[PoseFrame]) -> float:
+        """Analyze enhanced technical difficulty"""
+        try:
+            technical_scores = []
+            for i in range(1, len(frames)):
+                if frames[i].keypoints and frames[i-1].keypoints:
+                    # Analyze technical complexity of transitions
+                    technical_complexity = self._calculate_technical_complexity(frames[i-1], frames[i])
+                    technical_scores.append(technical_complexity)
+            
+            return np.mean(technical_scores) if technical_scores else 0.5
+            
+        except Exception as e:
+            logger.error(f"❌ Error analyzing enhanced technical difficulty: {e}")
+            return 0.5
+
+    def _analyze_enhanced_innovation(self, frames: List[PoseFrame]) -> float:
+        """Analyze enhanced innovation"""
+        try:
+            # Analyze uniqueness of movement patterns
+            movement_patterns = []
+            for i in range(1, len(frames)):
+                if frames[i].keypoints and frames[i-1].keypoints:
+                    pattern = self._extract_movement_pattern(frames[i-1], frames[i])
+                    movement_patterns.append(pattern)
+            
+            if len(movement_patterns) < 5:
+                return 0.5
+            
+            # Calculate pattern diversity
+            unique_patterns = len(set(movement_patterns))
+            total_patterns = len(movement_patterns)
+            
+            innovation_score = min(1.0, unique_patterns / total_patterns * 2)
+            return innovation_score
+            
+        except Exception as e:
+            logger.error(f"❌ Error analyzing enhanced innovation: {e}")
+            return 0.5
+    
+    # Enhanced Helper Methods
     
     def _calculate_frame_movement(self, frame1: PoseFrame, frame2: PoseFrame) -> float:
         """Calculate movement between two frames"""
@@ -853,6 +1071,112 @@ class EnhancedDanceScoringService:
             pose_data_url=None,
             confidence=0.0
         )
+
+    # Enhanced Helper Methods
+    
+    def _calculate_transition_smoothness(self, frame1: PoseFrame, frame2: PoseFrame) -> float:
+        """Calculate smoothness of transition between two frames"""
+        try:
+            if not frame1.keypoints or not frame2.keypoints:
+                return 0.5
+            
+            # Calculate average movement distance
+            total_distance = 0
+            valid_points = 0
+            
+            for kp1 in frame1.keypoints:
+                kp2 = next((kp for kp in frame2.keypoints if kp.keypoint_type == kp1.keypoint_type), None)
+                if kp2:
+                    distance = np.sqrt((kp2.x - kp1.x)**2 + (kp2.y - kp1.y)**2)
+                    total_distance += distance
+                    valid_points += 1
+            
+            if valid_points == 0:
+                return 0.5
+            
+            avg_distance = total_distance / valid_points
+            
+            # Lower distance = smoother transition
+            smoothness = max(0, 1 - avg_distance * 5)
+            return min(1.0, smoothness)
+            
+        except Exception as e:
+            return 0.5
+
+    def _calculate_motion_range(self, frame: PoseFrame) -> float:
+        """Calculate range of motion in a frame"""
+        try:
+            if not frame.keypoints:
+                return 0.0
+            
+            # Calculate bounding box of all keypoints
+            x_coords = [kp.x for kp in frame.keypoints]
+            y_coords = [kp.y for kp in frame.keypoints]
+            
+            x_range = max(x_coords) - min(x_coords)
+            y_range = max(y_coords) - min(y_coords)
+            
+            return x_range + y_range
+            
+        except Exception as e:
+            return 0.0
+
+    def _calculate_technical_complexity(self, frame1: PoseFrame, frame2: PoseFrame) -> float:
+        """Calculate technical complexity of transition"""
+        try:
+            if not frame1.keypoints or not frame2.keypoints:
+                return 0.5
+            
+            # Count simultaneous movements
+            simultaneous_movements = 0
+            total_keypoints = 0
+            
+            for kp1 in frame1.keypoints:
+                kp2 = next((kp for kp in frame2.keypoints if kp.keypoint_type == kp1.keypoint_type), None)
+                if kp2:
+                    movement = np.sqrt((kp2.x - kp1.x)**2 + (kp2.y - kp1.y)**2)
+                    if movement > 0.01:  # Significant movement threshold
+                        simultaneous_movements += 1
+                    total_keypoints += 1
+            
+            if total_keypoints == 0:
+                return 0.5
+            
+            # More simultaneous movements = higher complexity
+            complexity = min(1.0, simultaneous_movements / total_keypoints * 3)
+            return complexity
+            
+        except Exception as e:
+            return 0.5
+
+    def _extract_movement_pattern(self, frame1: PoseFrame, frame2: PoseFrame) -> str:
+        """Extract movement pattern as string for comparison"""
+        try:
+            if not frame1.keypoints or not frame2.keypoints:
+                return "static"
+            
+            pattern_parts = []
+            
+            for kp1 in frame1.keypoints:
+                kp2 = next((kp for kp in frame2.keypoints if kp.keypoint_type == kp1.keypoint_type), None)
+                if kp2:
+                    dx = kp2.x - kp1.x
+                    dy = kp2.y - kp1.y
+                    
+                    # Categorize movement direction
+                    if abs(dx) > abs(dy):
+                        direction = "horizontal"
+                    elif abs(dy) > abs(dx):
+                        direction = "vertical"
+                    else:
+                        direction = "diagonal"
+                    
+                    pattern_parts.append(f"{kp1.keypoint_type}_{direction}")
+            
+            return "_".join(sorted(pattern_parts))
+            
+        except Exception as e:
+            return "unknown"
 
 # Global service instance
 enhanced_scoring_service = EnhancedDanceScoringService() 

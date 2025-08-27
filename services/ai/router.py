@@ -193,4 +193,69 @@ async def ai_health():
             "pose_analysis",
             "dance_breakdown"
         ]
-    } 
+    }
+
+# ===== CACHE MANAGEMENT ENDPOINTS =====
+
+@ai_router.get('/api/ai/dance-breakdowns/statistics')
+async def get_breakdown_statistics(
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Get statistics about dance breakdowns including cache effectiveness
+    """
+    try:
+        stats = await dance_breakdown_service.get_breakdown_statistics()
+        return {
+            "success": True,
+            "statistics": stats
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting breakdown statistics: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get statistics: {str(e)}")
+
+@ai_router.post('/api/ai/dance-breakdowns/clear-duplicates')
+async def clear_duplicate_breakdowns(
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Remove duplicate breakdowns for the same video URL, keeping only the most recent successful one
+    """
+    try:
+        result = await dance_breakdown_service.clear_duplicate_breakdowns()
+        return {
+            "success": True,
+            "result": result
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error clearing duplicate breakdowns: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear duplicates: {str(e)}")
+
+@ai_router.get('/api/ai/dance-breakdowns/cache-status/{video_url:path}')
+async def check_cache_status(
+    video_url: str,
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Check if a video URL has an existing breakdown in cache
+    """
+    try:
+        # URL decode the video URL
+        import urllib.parse
+        decoded_url = urllib.parse.unquote(video_url)
+        
+        existing_breakdown = await dance_breakdown_service.get_breakdown_by_video_url(decoded_url)
+        
+        return {
+            "success": True,
+            "video_url": decoded_url,
+            "cached": existing_breakdown is not None,
+            "breakdown_id": str(existing_breakdown["_id"]) if existing_breakdown else None,
+            "created_at": existing_breakdown.get("createdAt") if existing_breakdown else None
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error checking cache status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to check cache status: {str(e)}") 
